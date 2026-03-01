@@ -81,7 +81,7 @@ export function CreateQueueModal({ open, onClose, onCreated }: CreateQueueModalP
             type="button"
             onClick={onClose}
             className={[
-              'text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors duration-100',
+              'text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors duration-100 cursor-pointer',
               'focus:outline-none focus:text-[var(--color-text)]',
             ].join(' ')}
             aria-label="Close modal"
@@ -147,10 +147,10 @@ export function CreateQueueModal({ open, onClose, onCreated }: CreateQueueModalP
               onClick={onClose}
               disabled={submitting}
               className={[
-                'text-xs px-4 py-2 rounded border border-[var(--color-border)] text-[var(--color-muted)]',
+                'text-xs px-4 py-2 rounded border border-[var(--color-border)] text-[var(--color-muted)] cursor-pointer',
                 'hover:border-white/20 hover:text-[var(--color-text)] transition-all duration-150',
                 'focus:outline-none focus:ring-1 focus:ring-white/20',
-                'disabled:opacity-40',
+                'disabled:opacity-40 disabled:cursor-not-allowed',
               ].join(' ')}
             >
               Cancel
@@ -159,7 +159,7 @@ export function CreateQueueModal({ open, onClose, onCreated }: CreateQueueModalP
               type="submit"
               disabled={!project.trim() || !directory.trim() || submitting}
               className={[
-                'text-xs px-4 py-2 rounded font-medium transition-all duration-150',
+                'text-xs px-4 py-2 rounded font-medium transition-all duration-150 cursor-pointer',
                 'bg-[var(--color-active)]/15 text-[var(--color-active)] border border-[var(--color-active)]/30',
                 'hover:bg-[var(--color-active)]/25 hover:border-[var(--color-active)]/60',
                 'focus:outline-none focus:ring-1 focus:ring-[var(--color-active)]/50',

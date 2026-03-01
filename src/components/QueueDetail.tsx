@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useQueue } from '../hooks/useQueue';
 import { api } from '../api/client';
 import type { Prompt } from '../types/queue';
@@ -14,47 +14,19 @@ interface QueueDetailProps {
 export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
   const { queue, loading, error, refresh } = useQueue(project);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const dragIdRef = useRef<string | null>(null);
 
-  // ---- Drag & drop handlers ----
-  function handleDragStart(_e: React.DragEvent, id: string) {
-    dragIdRef.current = id;
-  }
-
-  function handleDragOver(_e: React.DragEvent, id: string) {
-    setDragOverId(id);
-  }
-
-  function handleDrop(_e: React.DragEvent, targetId: string) {
-    const sourceId = dragIdRef.current;
-    if (!sourceId || sourceId === targetId || !queue) {
-      setDragOverId(null);
-      return;
-    }
-
-    const pendingPrompts = queue.prompts.filter((p) => p.status === 'pending');
-    const sourceIndex = pendingPrompts.findIndex((p) => p.id === sourceId);
-    const targetIndex = pendingPrompts.findIndex((p) => p.id === targetId);
-    if (sourceIndex === -1 || targetIndex === -1) {
-      setDragOverId(null);
-      return;
-    }
-
+  async function handleMove(pendingPrompts: Prompt[], fromIndex: number, toIndex: number) {
+    if (toIndex < 0 || toIndex >= pendingPrompts.length) return;
     const reordered = [...pendingPrompts];
-    const [moved] = reordered.splice(sourceIndex, 1);
-    reordered.splice(targetIndex, 0, moved);
-
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
     const newOrder = reordered.map((p) => p.id);
-    setDragOverId(null);
-    dragIdRef.current = null;
-
-    api.reorderPrompts(project, newOrder).then(refresh).catch(() => {});
-  }
-
-  function handleDragEnd() {
-    setDragOverId(null);
-    dragIdRef.current = null;
+    try {
+      await api.reorderPrompts(project, newOrder);
+      refresh();
+    } catch {
+      // Silent fail
+    }
   }
 
   async function handleDeleteQueue() {
@@ -70,7 +42,6 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
     }
   }
 
-  // ---- Render states ----
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -91,27 +62,28 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
 
   const activePrompts = queue.prompts.filter((p) => p.status !== 'completed');
   const completedPrompts = queue.prompts.filter((p) => p.status === 'completed');
+  const pendingPrompts = queue.prompts.filter((p) => p.status === 'pending');
 
-  function renderPromptList(prompts: Prompt[]) {
-    return prompts.map((prompt) => (
-      <PromptCard
-        key={prompt.id}
-        prompt={prompt}
-        project={project}
-        onMutate={refresh}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-        isDragOver={dragOverId === prompt.id}
-      />
-    ));
+  function renderPromptList(prompts: Prompt[], reorderable: boolean) {
+    return prompts.map((prompt, index) => {
+      const pendingIndex = reorderable ? pendingPrompts.findIndex((p) => p.id === prompt.id) : -1;
+      return (
+        <PromptCard
+          key={prompt.id}
+          prompt={prompt}
+          project={project}
+          onMutate={refresh}
+          onMoveUp={pendingIndex > 0 ? () => handleMove(pendingPrompts, pendingIndex, pendingIndex - 1) : undefined}
+          onMoveDown={pendingIndex >= 0 && pendingIndex < pendingPrompts.length - 1 ? () => handleMove(pendingPrompts, pendingIndex, pendingIndex + 1) : undefined}
+          isFirst={pendingIndex === 0}
+          isLast={pendingIndex === pendingPrompts.length - 1}
+        />
+      );
+    });
   }
 
   return (
-    <div
-      className="flex flex-col h-full overflow-hidden"
-      onDragEnd={handleDragEnd}
-    >
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="flex items-start justify-between gap-4">
@@ -124,12 +96,11 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
             </p>
           </div>
 
-          {/* Delete queue */}
           <button
             type="button"
             onClick={handleDeleteQueue}
             className={[
-              'shrink-0 text-xs px-3 py-1.5 rounded border transition-all duration-150',
+              'shrink-0 text-xs px-3 py-1.5 rounded border transition-all duration-150 cursor-pointer',
               'border-red-900/40 text-red-500/60',
               'hover:border-red-500/60 hover:text-red-400 hover:bg-red-500/5',
               'focus:outline-none focus:ring-1 focus:ring-red-500/30',
@@ -140,7 +111,6 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
           </button>
         </div>
 
-        {/* Session info */}
         <div className="mt-4">
           <SessionInfo session={queue.activeSession} />
         </div>
@@ -148,7 +118,6 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-        {/* Active prompts */}
         {activePrompts.length === 0 && completedPrompts.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-8 select-none">
             <span className="text-2xl text-[var(--color-border)]">&#x25A1;</span>
@@ -158,23 +127,21 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
 
         {activePrompts.length > 0 && (
           <div className="space-y-2" role="list" aria-label="Active prompts">
-            {renderPromptList(activePrompts)}
+            {renderPromptList(activePrompts, true)}
           </div>
         )}
 
-        {/* Add prompt form */}
         <div className="pt-1">
           <AddPromptForm project={project} onAdded={refresh} />
         </div>
 
-        {/* Completed / History */}
         {completedPrompts.length > 0 && (
           <div className="pt-2">
             <button
               type="button"
               onClick={() => setHistoryOpen((v) => !v)}
               className={[
-                'flex items-center gap-2 text-xs text-[var(--color-muted)] uppercase tracking-wider py-1',
+                'flex items-center gap-2 text-xs text-[var(--color-muted)] uppercase tracking-wider py-1 cursor-pointer',
                 'hover:text-[var(--color-text)] transition-colors duration-150 focus:outline-none',
               ].join(' ')}
               aria-expanded={historyOpen}
@@ -197,13 +164,12 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
                 role="list"
                 aria-label="Completed prompts"
               >
-                {renderPromptList(completedPrompts)}
+                {renderPromptList(completedPrompts, false)}
               </div>
             )}
           </div>
         )}
 
-        {/* Bottom padding so last card isn't clipped */}
         <div className="h-4" aria-hidden="true" />
       </div>
     </div>

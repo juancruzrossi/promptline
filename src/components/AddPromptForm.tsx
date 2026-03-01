@@ -63,7 +63,7 @@ export function AddPromptForm({ project, onAdded }: AddPromptFormProps) {
         type="button"
         onClick={() => setExpanded(true)}
         className={[
-          'w-full text-left text-xs text-[var(--color-muted)] px-4 py-2.5',
+          'w-full text-left text-xs text-[var(--color-muted)] px-4 py-2.5 cursor-pointer',
           'border border-dashed border-[var(--color-border)] rounded-lg',
           'hover:border-[var(--color-active)]/40 hover:text-[var(--color-active)] hover:bg-[var(--color-active)]/5',
           'transition-all duration-150 focus:outline-none focus:ring-1 focus:ring-[var(--color-active)]/30',
@@ -102,7 +102,7 @@ export function AddPromptForm({ project, onAdded }: AddPromptFormProps) {
           onClick={handleCancel}
           disabled={submitting}
           className={[
-            'text-xs px-3 py-1.5 rounded border border-[var(--color-border)] text-[var(--color-muted)]',
+            'text-xs px-3 py-1.5 rounded border border-[var(--color-border)] text-[var(--color-muted)] cursor-pointer',
             'hover:border-white/20 hover:text-[var(--color-text)] transition-all duration-150',
             'focus:outline-none focus:ring-1 focus:ring-white/20',
             'disabled:opacity-40 disabled:cursor-not-allowed',
@@ -115,7 +115,7 @@ export function AddPromptForm({ project, onAdded }: AddPromptFormProps) {
           onClick={handleSubmit}
           disabled={!text.trim() || submitting}
           className={[
-            'text-xs px-3 py-1.5 rounded font-medium transition-all duration-150',
+            'text-xs px-3 py-1.5 rounded font-medium transition-all duration-150 cursor-pointer',
             'bg-[var(--color-active)]/15 text-[var(--color-active)] border border-[var(--color-active)]/30',
             'hover:bg-[var(--color-active)]/25 hover:border-[var(--color-active)]/50',
             'focus:outline-none focus:ring-1 focus:ring-[var(--color-active)]/50',

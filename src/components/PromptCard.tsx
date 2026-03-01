@@ -6,11 +6,10 @@ interface PromptCardProps {
   prompt: Prompt;
   project: string;
   onMutate: () => void;
-  // Drag & drop
-  onDragStart?: (e: React.DragEvent, id: string) => void;
-  onDragOver?: (e: React.DragEvent, id: string) => void;
-  onDrop?: (e: React.DragEvent, id: string) => void;
-  isDragOver?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  isFirst?: boolean;
+  isLast?: boolean;
 }
 
 const STATUS_STYLES: Record<Prompt['status'], { color: string; badge: string; label: string }> = {
@@ -31,14 +30,21 @@ const STATUS_STYLES: Record<Prompt['status'], { color: string; badge: string; la
   },
 };
 
+const MOVE_BTN = [
+  'w-6 h-6 flex items-center justify-center rounded text-[var(--color-muted)] cursor-pointer',
+  'hover:text-[var(--color-text)] hover:bg-white/10',
+  'transition-all duration-100 focus:outline-none',
+  'disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted)]',
+].join(' ');
+
 export function PromptCard({
   prompt,
   project,
   onMutate,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  isDragOver = false,
+  onMoveUp,
+  onMoveDown,
+  isFirst = false,
+  isLast = false,
 }: PromptCardProps) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(prompt.text);
@@ -58,7 +64,6 @@ export function PromptCard({
     }
   }, [editing]);
 
-  // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -67,6 +72,7 @@ export function PromptCard({
   }, [editText]);
 
   function handleEditStart() {
+    if (!isPending) return;
     setEditText(prompt.text);
     setEditing(true);
   }
@@ -114,26 +120,11 @@ export function PromptCard({
 
   return (
     <div
-      className={[
-        'relative group transition-all duration-150',
-        isDragOver ? 'pt-2' : '',
-      ].join(' ')}
+      className="relative group transition-all duration-150"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      draggable={isPending}
-      onDragStart={isPending ? (e) => onDragStart?.(e, prompt.id) : undefined}
-      onDragOver={isPending ? (e) => { e.preventDefault(); onDragOver?.(e, prompt.id); } : undefined}
-      onDrop={isPending ? (e) => onDrop?.(e, prompt.id) : undefined}
       aria-label={`Prompt: ${prompt.text.slice(0, 50)}`}
     >
-      {/* Drop indicator line */}
-      {isDragOver && (
-        <div
-          className="absolute top-0 left-4 right-4 h-0.5 bg-[var(--color-pending)] rounded-full"
-          aria-hidden="true"
-        />
-      )}
-
       <div
         className={[
           'flex gap-0 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden',
@@ -150,35 +141,48 @@ export function PromptCard({
           aria-hidden="true"
         />
 
+        {/* Move up/down buttons — only for pending prompts */}
+        {isPending && (
+          <div className="flex flex-col items-center justify-center px-1 gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={isFirst}
+              className={MOVE_BTN}
+              aria-label="Move up"
+              title="Move up"
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={isLast}
+              className={MOVE_BTN}
+              aria-label="Move down"
+              title="Move down"
+            >
+              ▼
+            </button>
+          </div>
+        )}
+
         {/* Card body */}
-        <div className="flex-1 px-4 py-3 min-w-0">
-          {/* Top row: drag handle + status badge + actions */}
+        <div className="flex-1 px-3 py-3 min-w-0">
+          {/* Top row: status badge + actions */}
           <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2">
-              {/* Drag handle — only for pending */}
-              {isPending && (
-                <span
-                  className="text-[var(--color-muted)] text-sm cursor-grab active:cursor-grabbing select-none"
-                  aria-hidden="true"
-                  title="Drag to reorder"
-                >
-                  ⠿
-                </span>
-              )}
+            {/* Status badge */}
+            <span
+              className={[
+                'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium leading-none',
+                styles.badge,
+              ].join(' ')}
+              aria-label={`Status: ${styles.label}`}
+            >
+              {styles.label}
+            </span>
 
-              {/* Status badge */}
-              <span
-                className={[
-                  'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium leading-none',
-                  styles.badge,
-                ].join(' ')}
-                aria-label={`Status: ${styles.label}`}
-              >
-                {styles.label}
-              </span>
-            </div>
-
-            {/* Action buttons — visible on hover (for non-completed, non-editing) */}
+            {/* Action buttons — visible on hover */}
             {!editing && !isRunning && (
               <div
                 className={[
@@ -191,7 +195,7 @@ export function PromptCard({
                     type="button"
                     onClick={handleEditStart}
                     className={[
-                      'text-xs px-1.5 py-0.5 rounded text-[var(--color-muted)]',
+                      'text-xs px-1.5 py-0.5 rounded text-[var(--color-muted)] cursor-pointer',
                       'hover:text-[var(--color-text)] hover:bg-white/10',
                       'transition-all duration-100 focus:outline-none',
                     ].join(' ')}
@@ -204,7 +208,7 @@ export function PromptCard({
                   type="button"
                   onClick={handleDelete}
                   className={[
-                    'text-xs px-1.5 py-0.5 rounded text-[var(--color-muted)]',
+                    'text-xs px-1.5 py-0.5 rounded text-[var(--color-muted)] cursor-pointer',
                     'hover:text-red-400 hover:bg-red-400/10',
                     'transition-all duration-100 focus:outline-none',
                   ].join(' ')}
@@ -238,9 +242,9 @@ export function PromptCard({
                   onClick={handleEditCancel}
                   disabled={saving}
                   className={[
-                    'text-xs px-2.5 py-1 rounded border border-[var(--color-border)] text-[var(--color-muted)]',
+                    'text-xs px-2.5 py-1 rounded border border-[var(--color-border)] text-[var(--color-muted)] cursor-pointer',
                     'hover:text-[var(--color-text)] hover:border-white/20 transition-all duration-150',
-                    'focus:outline-none disabled:opacity-40',
+                    'focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed',
                   ].join(' ')}
                 >
                   Cancel
@@ -250,7 +254,7 @@ export function PromptCard({
                   onClick={handleEditSave}
                   disabled={!editText.trim() || saving}
                   className={[
-                    'text-xs px-2.5 py-1 rounded font-medium transition-all duration-150',
+                    'text-xs px-2.5 py-1 rounded font-medium transition-all duration-150 cursor-pointer',
                     'bg-[var(--color-active)]/15 text-[var(--color-active)] border border-[var(--color-active)]/30',
                     'hover:bg-[var(--color-active)]/25 focus:outline-none',
                     'disabled:opacity-40 disabled:cursor-not-allowed',
@@ -261,7 +265,13 @@ export function PromptCard({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words">
+            <p
+              className={[
+                'text-sm text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words',
+                isPending ? 'cursor-text hover:bg-white/5 -mx-2 px-2 -my-1 py-1 rounded transition-colors duration-100' : '',
+              ].join(' ')}
+              onClick={isPending ? handleEditStart : undefined}
+            >
               {prompt.text}
             </p>
           )}

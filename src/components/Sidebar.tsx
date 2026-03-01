@@ -75,7 +75,7 @@ export function Sidebar({ queues, selectedProject, onSelectProject, onCreateQueu
                   onClick={() => onSelectProject(queue.project)}
                   aria-current={isSelected ? 'page' : undefined}
                   className={[
-                    'w-full text-left px-5 py-3 flex items-start gap-3 transition-colors duration-150',
+                    'w-full text-left px-5 py-3 flex items-start gap-3 transition-colors duration-150 cursor-pointer',
                     'border-l-2',
                     isSelected
                       ? 'border-[var(--color-running)] bg-[var(--color-border)]'
@@ -118,9 +118,9 @@ export function Sidebar({ queues, selectedProject, onSelectProject, onCreateQueu
           type="button"
           onClick={onCreateQueue}
           className={[
-            'w-full text-xs text-[var(--color-muted)] py-2.5 px-3 rounded-lg',
-            'border border-dashed border-[var(--color-border)]',
-            'hover:border-[var(--color-active)]/40 hover:text-[var(--color-active)] hover:bg-[var(--color-active)]/5',
+            'w-full text-xs text-[var(--color-active)] py-2.5 px-3 rounded-lg cursor-pointer',
+            'border border-dashed border-[var(--color-active)]/30',
+            'hover:border-[var(--color-active)]/60 hover:bg-[var(--color-active)]/10',
             'transition-all duration-150 focus:outline-none focus:ring-1 focus:ring-[var(--color-active)]/30',
           ].join(' ')}
           aria-label="Create new queue"

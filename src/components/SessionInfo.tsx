@@ -94,7 +94,7 @@ export function SessionInfo({ session }: SessionInfoProps) {
         type="button"
         onClick={handleResume}
         className={[
-          'text-xs px-2.5 py-1 rounded border transition-all duration-150',
+          'text-xs px-2.5 py-1 rounded border transition-all duration-150 cursor-pointer',
           'border-[var(--color-border)] text-[var(--color-muted)]',
           'hover:border-[var(--color-running)]/50 hover:text-[var(--color-running)] hover:bg-[var(--color-running)]/5',
           'focus:outline-none focus:ring-1 focus:ring-[var(--color-running)]/50',
