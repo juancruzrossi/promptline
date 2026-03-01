@@ -36,33 +36,8 @@ QUEUE_FILE="$QUEUE_DIR/$PROJECT.json"
 
 export QUEUE_FILE SESSION_ID CWD PROJECT
 
-# No queue file -> create one automatically
+# No queue file -> nothing to do (SessionStart hook handles registration)
 if [ ! -f "$QUEUE_FILE" ]; then
-  mkdir -p "$QUEUE_DIR"
-  python3 -c "
-import json, os, tempfile
-from datetime import datetime, timezone
-queue_file = os.environ['QUEUE_FILE']
-data = {
-    'project': os.environ['PROJECT'],
-    'directory': os.environ['CWD'],
-    'prompts': [],
-    'activeSession': {
-        'sessionId': os.environ.get('SESSION_ID', ''),
-        'status': 'active',
-        'startedAt': datetime.now(timezone.utc).isoformat(),
-        'lastActivity': datetime.now(timezone.utc).isoformat(),
-        'currentPromptId': None,
-    },
-    'sessionHistory': [],
-}
-dir_name = os.path.dirname(queue_file)
-fd, tmp = tempfile.mkstemp(dir=dir_name, suffix='.tmp')
-with os.fdopen(fd, 'w') as f:
-    json.dump(data, f, indent=2)
-os.replace(tmp, queue_file)
-"
-  # Queue created but no prompts to process
   exit 0
 fi
 
