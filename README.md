@@ -6,10 +6,11 @@ Queue multiple prompts for Claude Code and let them execute automatically, one a
 
 PromptLine is a prompt queue system for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It lets you line up a series of prompts that Claude Code will process sequentially. When Claude finishes responding to one prompt, the next one starts automatically.
 
-It consists of two parts:
+It consists of three parts:
 
-1. **A bash hook** (`prompt-queue.sh`) that integrates with Claude Code's Stop hook system. After each response, it reads the next pending prompt from the queue and feeds it to Claude.
-2. **A React dashboard** to manage your prompt queues visually: add, edit, reorder, and delete prompts per project with real-time status updates.
+1. **A SessionStart hook** (`session-register.sh`) that auto-registers Claude Code sessions when they open, so projects appear in the dashboard immediately.
+2. **A Stop hook** (`prompt-queue.sh`) that reads the next pending prompt from the queue and feeds it to Claude after each response.
+3. **A React dashboard** to manage your prompt queues visually: add, edit, reorder, and delete prompts per project with real-time status updates.
 
 ## How it works
 
@@ -36,7 +37,10 @@ Repeats until no more pending prompts -> exit 0 -> Claude stops
 - Session tracking captures the Claude Code session UUID for `claude --resume` support
 - The dashboard polls every 2 seconds for real-time updates
 - File writes are atomic (write-to-temp + rename) to prevent corruption
-- Sessions are auto-detected as idle after 5 minutes of inactivity
+- Sessions auto-register on open (SessionStart hook) — no manual queue creation needed
+- Sessions are auto-detected as idle after 1 minute of inactivity
+- Completed queues show a "completed" badge and auto-hide after 7 days
+- Empty queues with idle/no session are hidden from the dashboard
 
 ## Setup
 
@@ -56,19 +60,30 @@ npm install
 
 ### Install the hook
 
-Copy the hook script and configure Claude Code:
+Copy the hook scripts and configure Claude Code:
 
 ```bash
 mkdir -p ~/.claude/hooks
 cp prompt-queue.sh ~/.claude/hooks/prompt-queue.sh
-chmod +x ~/.claude/hooks/prompt-queue.sh
+cp session-register.sh ~/.claude/hooks/session-register.sh
+chmod +x ~/.claude/hooks/prompt-queue.sh ~/.claude/hooks/session-register.sh
 ```
 
-Add the hook to `~/.claude/settings.json` under the `"Stop"` key:
+Add both hooks to `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/session-register.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -93,9 +108,9 @@ The dashboard opens automatically in your browser on a random port (3000-10000).
 
 ## Usage
 
-1. **Create a queue** — Click "+ New Queue" in the sidebar. Enter a project name (must match the directory name where Claude Code runs) and the directory path.
+1. **Open Claude Code** — When you open a Claude Code session in any project, PromptLine auto-detects it and creates a queue entry. No manual setup needed.
 
-2. **Add prompts** — Click "+ Add Prompt" and type your prompts. They'll execute in order from top to bottom.
+2. **Add prompts** — Click "+ Add Prompt" and type your prompts. They'll execute in order from top to bottom. You can also manually create a queue with "+ New Queue" if needed.
 
 3. **Reorder prompts** — Drag and drop cards to change execution order. Only pending prompts can be reordered.
 
@@ -108,7 +123,7 @@ The dashboard opens automatically in your browser on a random port (3000-10000).
 7. **Monitor** — The dashboard shows real-time status:
    - Which prompt is running (green pulse), pending (yellow), or completed (dimmed)
    - Active session info with session ID and last activity timestamp
-   - Sessions auto-detect as "idle" after 5 minutes of no hook activity
+   - Sessions auto-detect as "idle" after 1 minute of no hook activity (running prompts stay active regardless)
    - Resume button copies `claude --resume {uuid}` to your clipboard
    - Status bar at the bottom shows totals across all projects
 
@@ -172,13 +187,16 @@ Each queue is stored at `~/.promptline/queues/{project}.json`:
 
 Prompt statuses: `pending` -> `running` -> `completed`
 
-Session statuses: `active` (hook fired within 5 min) or `idle` (computed server-side)
+Session statuses: `active` (hook fired within 1 min or prompt running) or `idle` (computed server-side)
+
+Queue statuses: `active` (has pending/running prompts), `completed` (all done, visible for 7 days), `empty` (no prompts)
 
 ## Project structure
 
 ```
 promptline/
-  prompt-queue.sh          # Claude Code Stop hook (bash + embedded Python)
+  session-register.sh      # Claude Code SessionStart hook (auto-registration)
+  prompt-queue.sh          # Claude Code Stop hook (queue processing)
   vite-plugin-api.ts       # Vite middleware — REST API endpoints
   vite.config.ts           # Vite config (random port, auto-open browser)
   src/
