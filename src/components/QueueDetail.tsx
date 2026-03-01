@@ -53,9 +53,9 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
 
     const reordered = [...pendingPrompts];
     const [moved] = reordered.splice(sourceIndex, 1);
-    const insertAt = position === 'after'
-      ? Math.min(targetIndex, reordered.length)
-      : targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
+    // After removing source, target shifts down if source was before it
+    const adjustedTarget = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    const insertAt = position === 'after' ? adjustedTarget + 1 : adjustedTarget;
     reordered.splice(insertAt, 0, moved);
 
     const newOrder = reordered.map((p) => p.id);
