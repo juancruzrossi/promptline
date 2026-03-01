@@ -81,16 +81,43 @@ for p in prompts:
         next_prompt = p
         break
 
-# Step 3: Handle active session
+# Step 3: Always update session tracking (even with no pending prompts)
 active = data.get("activeSession")
 history = data.get("sessionHistory", [])
 
+def update_session(active, history, session_id, now, current_prompt_id):
+    """Update or create session, archive old sessions if needed."""
+    if active is None:
+        return {
+            "sessionId": session_id,
+            "status": "active",
+            "startedAt": now,
+            "lastActivity": now,
+            "currentPromptId": current_prompt_id,
+        }
+    if active.get("sessionId") != session_id and session_id:
+        completed_count = sum(1 for p in prompts if p.get("status") == "completed")
+        history.append({
+            "sessionId": active["sessionId"],
+            "startedAt": active.get("startedAt", now),
+            "endedAt": now,
+            "promptsExecuted": completed_count,
+        })
+        return {
+            "sessionId": session_id,
+            "status": "active",
+            "startedAt": now,
+            "lastActivity": now,
+            "currentPromptId": current_prompt_id,
+        }
+    active["status"] = "active"
+    active["lastActivity"] = now
+    active["currentPromptId"] = current_prompt_id
+    return active
+
 if next_prompt is None:
-    # No pending prompts -> mark session idle
-    if active is not None:
-        active["status"] = "idle"
-        active["lastActivity"] = now
-        active["currentPromptId"] = None
+    # No pending prompts -> register session but exit 0
+    active = update_session(active, history, session_id, now, None)
     data["prompts"] = prompts
     data["activeSession"] = active
     data["sessionHistory"] = history
@@ -101,38 +128,7 @@ if next_prompt is None:
 
 # We have a pending prompt -> mark it as running
 next_prompt["status"] = "running"
-
-# Handle session tracking
-if active is None:
-    # Create new session
-    active = {
-        "sessionId": session_id,
-        "status": "active",
-        "startedAt": now,
-        "lastActivity": now,
-        "currentPromptId": next_prompt["id"],
-    }
-elif active.get("sessionId") != session_id and session_id:
-    # Different session -> archive old one
-    completed_count = sum(1 for p in prompts if p.get("status") == "completed")
-    history.append({
-        "sessionId": active["sessionId"],
-        "startedAt": active.get("startedAt", now),
-        "endedAt": now,
-        "promptsExecuted": completed_count,
-    })
-    active = {
-        "sessionId": session_id,
-        "status": "active",
-        "startedAt": now,
-        "lastActivity": now,
-        "currentPromptId": next_prompt["id"],
-    }
-else:
-    # Same session -> update
-    active["status"] = "active"
-    active["lastActivity"] = now
-    active["currentPromptId"] = next_prompt["id"]
+active = update_session(active, history, session_id, now, next_prompt["id"])
 
 data["prompts"] = prompts
 data["activeSession"] = active

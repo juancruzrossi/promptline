@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQueue } from '../hooks/useQueue';
 import { api } from '../api/client';
 import type { Prompt } from '../types/queue';
@@ -14,19 +14,49 @@ interface QueueDetailProps {
 export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
   const { queue, loading, error, refresh } = useQueue(project);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const dragSourceRef = useRef<string | null>(null);
 
-  async function handleMove(pendingPrompts: Prompt[], fromIndex: number, toIndex: number) {
-    if (toIndex < 0 || toIndex >= pendingPrompts.length) return;
-    const reordered = [...pendingPrompts];
-    const [moved] = reordered.splice(fromIndex, 1);
-    reordered.splice(toIndex, 0, moved);
-    const newOrder = reordered.map((p) => p.id);
-    try {
-      await api.reorderPrompts(project, newOrder);
-      refresh();
-    } catch {
-      // Silent fail
+  function handleDragStart(id: string) {
+    dragSourceRef.current = id;
+    setDraggingId(id);
+  }
+
+  function handleDragEnter(id: string) {
+    if (dragSourceRef.current && dragSourceRef.current !== id) {
+      setDragOverId(id);
     }
+  }
+
+  function handleDragEnd() {
+    setDragOverId(null);
+    setDraggingId(null);
+    dragSourceRef.current = null;
+  }
+
+  function handleDrop(targetId: string) {
+    const sourceId = dragSourceRef.current;
+    if (!sourceId || sourceId === targetId || !queue) {
+      handleDragEnd();
+      return;
+    }
+
+    const pendingPrompts = queue.prompts.filter((p) => p.status === 'pending');
+    const sourceIndex = pendingPrompts.findIndex((p) => p.id === sourceId);
+    const targetIndex = pendingPrompts.findIndex((p) => p.id === targetId);
+    if (sourceIndex === -1 || targetIndex === -1) {
+      handleDragEnd();
+      return;
+    }
+
+    const reordered = [...pendingPrompts];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    const newOrder = reordered.map((p) => p.id);
+    handleDragEnd();
+    api.reorderPrompts(project, newOrder).then(refresh).catch(() => {});
   }
 
   async function handleDeleteQueue() {
@@ -62,24 +92,22 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
 
   const activePrompts = queue.prompts.filter((p) => p.status !== 'completed');
   const completedPrompts = queue.prompts.filter((p) => p.status === 'completed');
-  const pendingPrompts = queue.prompts.filter((p) => p.status === 'pending');
 
   function renderPromptList(prompts: Prompt[], reorderable: boolean) {
-    return prompts.map((prompt, index) => {
-      const pendingIndex = reorderable ? pendingPrompts.findIndex((p) => p.id === prompt.id) : -1;
-      return (
-        <PromptCard
-          key={prompt.id}
-          prompt={prompt}
-          project={project}
-          onMutate={refresh}
-          onMoveUp={pendingIndex > 0 ? () => handleMove(pendingPrompts, pendingIndex, pendingIndex - 1) : undefined}
-          onMoveDown={pendingIndex >= 0 && pendingIndex < pendingPrompts.length - 1 ? () => handleMove(pendingPrompts, pendingIndex, pendingIndex + 1) : undefined}
-          isFirst={pendingIndex === 0}
-          isLast={pendingIndex === pendingPrompts.length - 1}
-        />
-      );
-    });
+    return prompts.map((prompt) => (
+      <PromptCard
+        key={prompt.id}
+        prompt={prompt}
+        project={project}
+        onMutate={refresh}
+        onDragStart={reorderable ? handleDragStart : undefined}
+        onDragEnter={reorderable ? handleDragEnter : undefined}
+        onDragEnd={reorderable ? handleDragEnd : undefined}
+        onDrop={reorderable ? handleDrop : undefined}
+        isDragOver={dragOverId === prompt.id}
+        isDragging={draggingId === prompt.id}
+      />
+    ));
   }
 
   return (

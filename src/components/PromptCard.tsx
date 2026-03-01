@@ -6,10 +6,12 @@ interface PromptCardProps {
   prompt: Prompt;
   project: string;
   onMutate: () => void;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  isFirst?: boolean;
-  isLast?: boolean;
+  onDragStart?: (id: string) => void;
+  onDragEnter?: (id: string) => void;
+  onDragEnd?: () => void;
+  onDrop?: (targetId: string) => void;
+  isDragOver?: boolean;
+  isDragging?: boolean;
 }
 
 const STATUS_STYLES: Record<Prompt['status'], { color: string; badge: string; label: string }> = {
@@ -30,26 +32,20 @@ const STATUS_STYLES: Record<Prompt['status'], { color: string; badge: string; la
   },
 };
 
-const MOVE_BTN = [
-  'w-6 h-6 flex items-center justify-center rounded text-[var(--color-muted)] cursor-pointer',
-  'hover:text-[var(--color-text)] hover:bg-white/10',
-  'transition-all duration-100 focus:outline-none',
-  'disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted)]',
-].join(' ');
-
 export function PromptCard({
   prompt,
   project,
   onMutate,
-  onMoveUp,
-  onMoveDown,
-  isFirst = false,
-  isLast = false,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onDrop,
+  isDragOver = false,
+  isDragging = false,
 }: PromptCardProps) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(prompt.text);
   const [saving, setSaving] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const styles = STATUS_STYLES[prompt.status];
@@ -72,7 +68,7 @@ export function PromptCard({
   }, [editText]);
 
   function handleEditStart() {
-    if (!isPending) return;
+    if (!isPending || editing) return;
     setEditText(prompt.text);
     setEditing(true);
   }
@@ -107,7 +103,8 @@ export function PromptCard({
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
     const confirmed = window.confirm('Delete this prompt?');
     if (!confirmed) return;
     try {
@@ -118,20 +115,56 @@ export function PromptCard({
     }
   }
 
+  function handleCardClick() {
+    if (!editing && isPending) {
+      handleEditStart();
+    }
+  }
+
   return (
     <div
-      className="relative group transition-all duration-150"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      className={[
+        'relative group transition-all duration-150',
+        isDragOver ? 'pt-1' : '',
+      ].join(' ')}
+      draggable={isPending && !editing}
+      onDragStart={isPending && !editing ? (e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', prompt.id);
+        onDragStart?.(prompt.id);
+      } : undefined}
+      onDragOver={isPending ? (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      } : undefined}
+      onDragEnter={isPending ? (e) => {
+        e.preventDefault();
+        onDragEnter?.(prompt.id);
+      } : undefined}
+      onDrop={isPending ? (e) => {
+        e.preventDefault();
+        onDrop?.(prompt.id);
+      } : undefined}
+      onDragEnd={onDragEnd}
       aria-label={`Prompt: ${prompt.text.slice(0, 50)}`}
     >
+      {/* Drop indicator */}
+      {isDragOver && (
+        <div
+          className="absolute top-0 left-2 right-2 h-0.5 rounded-full bg-[var(--color-active)] shadow-[0_0_6px_var(--color-active)]"
+          aria-hidden="true"
+        />
+      )}
+
       <div
+        onClick={handleCardClick}
         className={[
           'flex gap-0 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden',
           'transition-all duration-150',
           isCompleted ? 'opacity-60' : '',
-          hovered && !isCompleted ? 'border-white/20 bg-white/8' : '',
+          isPending && !editing ? 'cursor-pointer hover:border-white/20 hover:bg-white/8' : '',
           isRunning ? 'border-l-0' : '',
+          isDragging ? 'opacity-40 scale-[0.98]' : '',
         ].join(' ')}
       >
         {/* Left color border */}
@@ -141,29 +174,16 @@ export function PromptCard({
           aria-hidden="true"
         />
 
-        {/* Move up/down buttons — only for pending prompts */}
-        {isPending && (
-          <div className="flex flex-col items-center justify-center px-1 gap-0.5 shrink-0">
-            <button
-              type="button"
-              onClick={onMoveUp}
-              disabled={isFirst}
-              className={MOVE_BTN}
-              aria-label="Move up"
-              title="Move up"
+        {/* Drag handle — only for pending */}
+        {isPending && !editing && (
+          <div className="flex items-center px-2 shrink-0 cursor-grab active:cursor-grabbing">
+            <span
+              className="text-[var(--color-muted)]/50 text-sm select-none"
+              aria-hidden="true"
+              title="Drag to reorder"
             >
-              ▲
-            </button>
-            <button
-              type="button"
-              onClick={onMoveDown}
-              disabled={isLast}
-              className={MOVE_BTN}
-              aria-label="Move down"
-              title="Move down"
-            >
-              ▼
-            </button>
+              ⠿
+            </span>
           </div>
         )}
 
@@ -171,7 +191,6 @@ export function PromptCard({
         <div className="flex-1 px-3 py-3 min-w-0">
           {/* Top row: status badge + actions */}
           <div className="flex items-start justify-between gap-2 mb-2">
-            {/* Status badge */}
             <span
               className={[
                 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium leading-none',
@@ -182,47 +201,26 @@ export function PromptCard({
               {styles.label}
             </span>
 
-            {/* Action buttons — visible on hover */}
+            {/* Action buttons */}
             {!editing && !isRunning && (
-              <div
+              <button
+                type="button"
+                onClick={handleDelete}
                 className={[
-                  'flex items-center gap-1 transition-opacity duration-100',
-                  hovered ? 'opacity-100' : 'opacity-0',
+                  'text-xs px-1.5 py-0.5 rounded text-[var(--color-muted)] cursor-pointer opacity-0 group-hover:opacity-100',
+                  'hover:text-red-400 hover:bg-red-400/10',
+                  'transition-all duration-100 focus:outline-none',
                 ].join(' ')}
+                aria-label="Delete prompt"
               >
-                {!isCompleted && (
-                  <button
-                    type="button"
-                    onClick={handleEditStart}
-                    className={[
-                      'text-xs px-1.5 py-0.5 rounded text-[var(--color-muted)] cursor-pointer',
-                      'hover:text-[var(--color-text)] hover:bg-white/10',
-                      'transition-all duration-100 focus:outline-none',
-                    ].join(' ')}
-                    aria-label="Edit prompt"
-                  >
-                    ✎
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className={[
-                    'text-xs px-1.5 py-0.5 rounded text-[var(--color-muted)] cursor-pointer',
-                    'hover:text-red-400 hover:bg-red-400/10',
-                    'transition-all duration-100 focus:outline-none',
-                  ].join(' ')}
-                  aria-label="Delete prompt"
-                >
-                  ✕
-                </button>
-              </div>
+                ✕
+              </button>
             )}
           </div>
 
           {/* Prompt text or edit textarea */}
           {editing ? (
-            <div className="space-y-2">
+            <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
               <textarea
                 ref={textareaRef}
                 value={editText}
@@ -265,13 +263,7 @@ export function PromptCard({
               </div>
             </div>
           ) : (
-            <p
-              className={[
-                'text-sm text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words',
-                isPending ? 'cursor-text hover:bg-white/5 -mx-2 px-2 -my-1 py-1 rounded transition-colors duration-100' : '',
-              ].join(' ')}
-              onClick={isPending ? handleEditStart : undefined}
-            >
+            <p className="text-sm text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words">
               {prompt.text}
             </p>
           )}
