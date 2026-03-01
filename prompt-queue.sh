@@ -60,7 +60,7 @@ def atomic_write(path, obj):
         with os.fdopen(fd, "w") as f:
             json.dump(obj, f, indent=2)
         os.replace(tmp_path, path)
-    except:
+    except Exception:
         try:
             os.unlink(tmp_path)
         except OSError:

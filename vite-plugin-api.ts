@@ -17,9 +17,11 @@ function queuePath(project: string): string {
 }
 
 function readQueue(project: string): ProjectQueue | null {
-  const filePath = queuePath(project);
-  if (!existsSync(filePath)) return null;
-  return JSON.parse(readFileSync(filePath, 'utf-8')) as ProjectQueue;
+  try {
+    return JSON.parse(readFileSync(queuePath(project), 'utf-8')) as ProjectQueue;
+  } catch {
+    return null;
+  }
 }
 
 function writeQueue(queue: ProjectQueue): void {
