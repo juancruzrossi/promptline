@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0a0f;
+  --color-surface: #111118;
+  --color-border: #1e1e2e;
+  --color-text: #e2e8f0;
+  --color-muted: #64748b;
+  --color-active: #4ade80;
+  --color-running: #a78bfa;
+  --color-pending: #60a5fa;
+  --color-idle: #f472b6;
+  --color-completed: #34d399;
+}
+
+html {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Pulsing animation for active status dots */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
