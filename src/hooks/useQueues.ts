@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api, type QueueWithStatus } from '../api/client';
+import type { ProjectView } from '../types/queue';
+import { api } from '../api/client';
 
-export function useQueues(pollIntervalMs = 2000) {
-  const [queues, setQueues] = useState<QueueWithStatus[]>([]);
+export function useProjects(pollIntervalMs = 2000) {
+  const [projects, setProjects] = useState<ProjectView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const data = await api.listQueues();
-      setQueues(data);
+      const data = await api.listProjects();
+      setProjects(data);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -24,5 +25,5 @@ export function useQueues(pollIntervalMs = 2000) {
     return () => clearInterval(interval);
   }, [refresh, pollIntervalMs]);
 
-  return { queues, loading, error, refresh };
+  return { projects, loading, error, refresh };
 }

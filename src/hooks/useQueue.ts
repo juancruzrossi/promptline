@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ProjectQueue } from '../types/queue';
+import type { ProjectView } from '../types/queue';
 import { api } from '../api/client';
 
-export function useQueue(project: string | null, pollIntervalMs = 2000) {
-  const [queue, setQueue] = useState<ProjectQueue | null>(null);
+export function useProject(project: string | null, pollIntervalMs = 2000) {
+  const [projectView, setProjectView] = useState<ProjectView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -13,8 +13,8 @@ export function useQueue(project: string | null, pollIntervalMs = 2000) {
       return;
     }
     try {
-      const data = await api.getQueue(project);
-      setQueue(data);
+      const data = await api.getProject(project);
+      setProjectView(data);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -24,12 +24,12 @@ export function useQueue(project: string | null, pollIntervalMs = 2000) {
   }, [project]);
 
   useEffect(() => {
-    setQueue(null);
+    setProjectView(null);
     setLoading(true);
     refresh();
     const interval = setInterval(refresh, pollIntervalMs);
     return () => clearInterval(interval);
   }, [refresh, pollIntervalMs]);
 
-  return { queue, loading, error, refresh };
+  return { projectView, loading, error, refresh };
 }

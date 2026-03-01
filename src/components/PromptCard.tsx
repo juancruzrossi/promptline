@@ -5,6 +5,7 @@ import { api } from '../api/client';
 interface PromptCardProps {
   prompt: Prompt;
   project: string;
+  sessionId: string;
   onMutate: () => void;
   onDragStart?: (id: string) => void;
   onDragOver?: (id: string, position: 'before' | 'after') => void;
@@ -35,6 +36,7 @@ const STATUS_STYLES: Record<Prompt['status'], { color: string; badge: string; la
 export function PromptCard({
   prompt,
   project,
+  sessionId,
   onMutate,
   onDragStart,
   onDragOver,
@@ -83,7 +85,7 @@ export function PromptCard({
     if (!trimmed || saving) return;
     setSaving(true);
     try {
-      await api.updatePrompt(project, prompt.id, { text: trimmed });
+      await api.updatePrompt(project, sessionId, prompt.id, { text: trimmed });
       setEditing(false);
       onMutate();
     } catch {
@@ -108,7 +110,7 @@ export function PromptCard({
     const confirmed = window.confirm('Delete this prompt?');
     if (!confirmed) return;
     try {
-      await api.deletePrompt(project, prompt.id);
+      await api.deletePrompt(project, sessionId, prompt.id);
       onMutate();
     } catch {
       // Silent fail

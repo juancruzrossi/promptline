@@ -1,50 +1,46 @@
 #!/bin/bash
 # prompt-queue.sh
 # JSON-based prompt queue hook for Claude Code.
-# Reads from ~/.promptline/queues/{project}.json, sends the next pending
-# prompt via stderr, and exits 2 so Claude continues working.
-# If no pending prompts remain, exits 0 and Claude stops normally.
+# Reads from ~/.promptline/queues/{project}/{session_id}.json,
+# sends the next pending prompt via stderr, and exits 2 so Claude
+# continues working. If no pending prompts remain, exits 0.
 
 set -euo pipefail
 
 # --- Read Claude Code hook input from stdin ---
 INPUT=$(cat)
 
-# --- Extract session_id and cwd from input JSON ---
-# Use newline as separator to handle paths with spaces
+# --- Extract session_id, cwd, and transcript_path from input JSON ---
 PARSED=$(echo "$INPUT" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 print(data.get('session_id', ''))
 print(data.get('cwd', ''))
-" 2>/dev/null) || PARSED=$'\n'
+print(data.get('transcript_path', ''))
+" 2>/dev/null) || PARSED=$'\n\n'
 
 SESSION_ID=$(echo "$PARSED" | sed -n '1p')
 CWD=$(echo "$PARSED" | sed -n '2p')
+TRANSCRIPT_PATH=$(echo "$PARSED" | sed -n '3p')
 
 # If no cwd, nothing to do
 if [ -z "$CWD" ]; then
   exit 0
 fi
 
-# --- Derive project name from cwd ---
+# --- Derive project name and session file path ---
 PROJECT=$(basename "$CWD")
+QUEUE_DIR="$HOME/.promptline/queues/$PROJECT"
+QUEUE_FILE="$QUEUE_DIR/$SESSION_ID.json"
 
-# --- Locate queue file ---
-QUEUE_DIR="$HOME/.promptline/queues"
-QUEUE_FILE="$QUEUE_DIR/$PROJECT.json"
+export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH
 
-export QUEUE_FILE SESSION_ID CWD PROJECT
-
-# No queue file -> nothing to do (SessionStart hook handles registration)
+# No session file -> nothing to do (SessionStart hook handles registration)
 if [ ! -f "$QUEUE_FILE" ]; then
   exit 0
 fi
 
 # --- Process queue with python3 ---
-# Python handles all JSON manipulation atomically and outputs:
-#   Line 1: EXIT_CODE (0 or 2)
-#   Line 2: PROMPT_TEXT (only when EXIT_CODE=2)
 RESULT=$(python3 << 'PYEOF'
 import json
 import sys
@@ -67,8 +63,36 @@ def atomic_write(path, obj):
             pass
         raise
 
+def extract_session_name(transcript_path, max_len=80):
+    """Extract first user message from transcript JSONL as session name."""
+    if not transcript_path or not os.path.isfile(transcript_path):
+        return None
+    try:
+        with open(transcript_path, "r") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line.strip())
+                    if entry.get("type") == "user":
+                        msg = entry.get("message", {})
+                        content = msg.get("content", "")
+                        if isinstance(content, str) and content.strip():
+                            text = content.strip().replace("\n", " ")
+                            return text[:max_len] if len(text) > max_len else text
+                        elif isinstance(content, list):
+                            for part in content:
+                                if isinstance(part, dict) and part.get("type") == "text":
+                                    text = part.get("text", "").strip().replace("\n", " ")
+                                    if text:
+                                        return text[:max_len] if len(text) > max_len else text
+                except (json.JSONDecodeError, KeyError):
+                    continue
+    except (IOError, OSError):
+        pass
+    return None
+
 queue_file = os.environ.get("QUEUE_FILE", "")
 session_id = os.environ.get("SESSION_ID", "")
+transcript_path = os.environ.get("TRANSCRIPT_PATH", "")
 
 if not queue_file or not os.path.isfile(queue_file):
     print("0")
@@ -95,6 +119,10 @@ all_done = all(p.get("status") == "completed" for p in prompts) and len(prompts)
 if all_done and not data.get("completedAt"):
     data["completedAt"] = now
 
+# Step 1c: Update sessionName if still null
+if not data.get("sessionName"):
+    data["sessionName"] = extract_session_name(transcript_path)
+
 # Step 2: Find the first "pending" prompt
 next_prompt = None
 for p in prompts:
@@ -102,64 +130,26 @@ for p in prompts:
         next_prompt = p
         break
 
-# Step 3: Always update session tracking (even with no pending prompts)
-active = data.get("activeSession")
-history = data.get("sessionHistory", [])
-
-def update_session(active, history, session_id, now, current_prompt_id):
-    """Update or create session, archive old sessions if needed."""
-    if active is None:
-        return {
-            "sessionId": session_id,
-            "status": "active",
-            "startedAt": now,
-            "lastActivity": now,
-            "currentPromptId": current_prompt_id,
-        }
-    if active.get("sessionId") != session_id and session_id:
-        completed_count = sum(1 for p in prompts if p.get("status") == "completed")
-        history.append({
-            "sessionId": active["sessionId"],
-            "startedAt": active.get("startedAt", now),
-            "endedAt": now,
-            "promptsExecuted": completed_count,
-        })
-        return {
-            "sessionId": session_id,
-            "status": "active",
-            "startedAt": now,
-            "lastActivity": now,
-            "currentPromptId": current_prompt_id,
-        }
-    active["status"] = "active"
-    active["lastActivity"] = now
-    active["currentPromptId"] = current_prompt_id
-    return active
+# Step 3: Update session tracking
+data["lastActivity"] = now
 
 if next_prompt is None:
-    # No pending prompts -> register session but exit 0
-    active = update_session(active, history, session_id, now, None)
     data["prompts"] = prompts
-    data["activeSession"] = active
-    data["sessionHistory"] = history
+    data["currentPromptId"] = None
     atomic_write(queue_file, data)
     print("0")
     sys.exit(0)
 
 # We have a pending prompt -> mark it as running
 next_prompt["status"] = "running"
-active = update_session(active, history, session_id, now, next_prompt["id"])
-
+data["currentPromptId"] = next_prompt["id"]
 data["prompts"] = prompts
-data["activeSession"] = active
-data["sessionHistory"] = history
 
 atomic_write(queue_file, data)
 
 # Count remaining pending prompts (excluding the one we just took)
 remaining = sum(1 for p in prompts if p.get("status") == "pending")
 
-# Output format: EXIT_CODE\nREMAINING\n__PROMPT_DELIMITER__\nprompt text (may be multi-line)
 DELIM = "__PROMPTLINE_DELIM__"
 print("2")
 print(str(remaining))

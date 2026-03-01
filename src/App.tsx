@@ -1,23 +1,15 @@
 import { useState } from 'react';
-import { useQueues } from './hooks/useQueues';
+import { useProjects } from './hooks/useQueues';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
-import { QueueDetail } from './components/QueueDetail';
-import { CreateQueueModal } from './components/CreateQueueModal';
+import { ProjectDetail } from './components/ProjectDetail';
 
 function App() {
-  const { queues, loading, error, refresh } = useQueues();
+  const { projects, loading, error } = useProjects();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
 
-  function handleQueueCreated(project: string) {
-    refresh();
-    setSelectedProject(project);
-  }
-
-  function handleQueueDeleted() {
+  function handleProjectDeleted() {
     setSelectedProject(null);
-    refresh();
   }
 
   return (
@@ -25,10 +17,9 @@ function App() {
       {/* Main area: sidebar + content */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
-          queues={queues}
+          projects={projects}
           selectedProject={selectedProject}
           onSelectProject={setSelectedProject}
-          onCreateQueue={() => setShowCreateModal(true)}
         />
 
         {/* Main content */}
@@ -53,23 +44,16 @@ function App() {
           )}
 
           {!loading && !error && selectedProject && (
-            <QueueDetail
+            <ProjectDetail
               project={selectedProject}
-              onQueueDeleted={handleQueueDeleted}
+              onProjectDeleted={handleProjectDeleted}
             />
           )}
         </main>
       </div>
 
       {/* Status bar pinned at bottom */}
-      <StatusBar queues={queues} />
-
-      {/* Create Queue modal */}
-      <CreateQueueModal
-        open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onCreated={handleQueueCreated}
-      />
+      <StatusBar projects={projects} />
     </div>
   );
 }
