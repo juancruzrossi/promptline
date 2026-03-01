@@ -88,8 +88,6 @@ async function handleApi(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  ensureQueuesDir();
-
   // GET /api/queues - list all queues
   if (url === '/api/queues' && method === 'GET') {
     return json(res, 200, listQueues());
@@ -122,8 +120,9 @@ async function handleApi(
     for (const id of order) {
       reordered.push(promptMap.get(id)!);
     }
+    const orderSet = new Set(order);
     for (const p of queue.prompts) {
-      if (!order.includes(p.id)) {
+      if (!orderSet.has(p.id)) {
         reordered.push(p);
       }
     }
@@ -150,6 +149,10 @@ async function handleApi(
         queue.prompts[idx].text = body.text as string;
       }
       if (body.status !== undefined) {
+        const validStatuses: PromptStatus[] = ['pending', 'running', 'completed'];
+        if (!validStatuses.includes(body.status as PromptStatus)) {
+          return jsonError(res, 400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+        }
         queue.prompts[idx].status = body.status as PromptStatus;
         if (body.status === 'completed') {
           queue.prompts[idx].completedAt = new Date().toISOString();
