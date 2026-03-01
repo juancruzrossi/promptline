@@ -67,8 +67,14 @@ function listQueues(): (ProjectQueue & { queueStatus: QueueStatus })[] {
     })
     .filter((q): q is NonNullable<typeof q> => {
       if (!q) return false;
+      // Hide completed queues older than 7 days
       if (q.queueStatus === 'completed' && q.completedAt) {
         return now - new Date(q.completedAt).getTime() < QUEUE_RETENTION_MS;
+      }
+      // Hide empty queues with idle/no session (no prompts + no active work = noise)
+      if (q.queueStatus === 'empty') {
+        const hasActiveSession = q.activeSession?.status === 'active';
+        if (!hasActiveSession) return false;
       }
       return true;
     });
