@@ -7,6 +7,13 @@ interface CreateQueueModalProps {
   onCreated: (project: string) => void;
 }
 
+const INPUT_CLASS = [
+  'w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg',
+  'px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)]/50',
+  'outline-none focus:border-[var(--color-active)]/50 focus:ring-1 focus:ring-[var(--color-active)]/20',
+  'transition-all duration-150',
+].join(' ');
+
 export function CreateQueueModal({ open, onClose, onCreated }: CreateQueueModalProps) {
   const [project, setProject] = useState('');
   const [directory, setDirectory] = useState('');
@@ -99,12 +106,7 @@ export function CreateQueueModal({ open, onClose, onCreated }: CreateQueueModalP
               value={project}
               onChange={(e) => setProject(e.target.value)}
               placeholder="my-project"
-              className={[
-                'w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg',
-                'px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)]/50',
-                'outline-none focus:border-[var(--color-active)]/50 focus:ring-1 focus:ring-[var(--color-active)]/20',
-                'transition-all duration-150',
-              ].join(' ')}
+              className={INPUT_CLASS}
               required
               autoComplete="off"
               spellCheck={false}
@@ -125,12 +127,7 @@ export function CreateQueueModal({ open, onClose, onCreated }: CreateQueueModalP
               value={directory}
               onChange={(e) => setDirectory(e.target.value)}
               placeholder="/home/user/projects/my-project"
-              className={[
-                'w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg',
-                'px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)]/50',
-                'outline-none focus:border-[var(--color-active)]/50 focus:ring-1 focus:ring-[var(--color-active)]/20',
-                'transition-all duration-150',
-              ].join(' ')}
+              className={INPUT_CLASS}
               required
               autoComplete="off"
               spellCheck={false}

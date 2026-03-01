@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ActiveSession } from '../types/queue';
 
 interface SessionInfoProps {
@@ -18,6 +18,13 @@ function relativeTime(isoString: string): string {
 
 export function SessionInfo({ session }: SessionInfoProps) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   if (!session) {
     return (
@@ -35,7 +42,7 @@ export function SessionInfo({ session }: SessionInfoProps) {
     try {
       await navigator.clipboard.writeText(`claude --resume ${session!.sessionId}`);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       // Fallback: do nothing if clipboard not available
     }

@@ -13,19 +13,19 @@ interface PromptCardProps {
   isDragOver?: boolean;
 }
 
-const STATUS_STYLES: Record<Prompt['status'], { border: string; badge: string; label: string }> = {
+const STATUS_STYLES: Record<Prompt['status'], { color: string; badge: string; label: string }> = {
   running: {
-    border: 'border-l-[var(--color-running)]',
+    color: 'var(--color-running)',
     badge: 'bg-[var(--color-running)]/15 text-[var(--color-running)]',
     label: 'running',
   },
   pending: {
-    border: 'border-l-[var(--color-pending)]',
+    color: 'var(--color-pending)',
     badge: 'bg-[var(--color-pending)]/15 text-[var(--color-pending)]',
     label: 'pending',
   },
   completed: {
-    border: 'border-l-[var(--color-completed)]',
+    color: 'var(--color-completed)',
     badge: 'bg-[var(--color-completed)]/15 text-[var(--color-completed)]',
     label: 'completed',
   },
@@ -145,21 +145,8 @@ export function PromptCard({
       >
         {/* Left color border */}
         <div
-          className={[
-            'w-1 shrink-0',
-            styles.border.replace('border-l-', 'bg-'),
-            isRunning ? 'animate-pulse-dot' : '',
-          ].join(' ')}
-          style={isRunning ? {
-            background: 'var(--color-running)',
-            animation: 'pulse-dot 1.5s ease-in-out infinite',
-          } : {
-            background: isCompleted
-              ? 'var(--color-completed)'
-              : isPending
-              ? 'var(--color-pending)'
-              : 'var(--color-running)',
-          }}
+          className={['w-1 shrink-0', isRunning ? 'animate-pulse-dot' : ''].join(' ')}
+          style={{ background: styles.color }}
           aria-hidden="true"
         />
 

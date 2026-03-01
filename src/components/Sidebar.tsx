@@ -89,12 +89,7 @@ export function Sidebar({ queues, selectedProject, onSelectProject, onCreateQueu
 
                   <span className="flex flex-col gap-0.5 min-w-0">
                     {/* Project name */}
-                    <span
-                      className={[
-                        'text-sm font-bold leading-tight truncate',
-                        isSelected ? 'text-[var(--color-text)]' : 'text-[var(--color-text)]',
-                      ].join(' ')}
-                    >
+                    <span className="text-sm font-bold leading-tight truncate text-[var(--color-text)]">
                       {queue.project}
                     </span>
 
