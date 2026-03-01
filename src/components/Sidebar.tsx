@@ -1,7 +1,9 @@
-import type { ProjectQueue } from '../types/queue';
+import type { ProjectQueue, QueueStatus } from '../types/queue';
+
+type QueueWithStatus = ProjectQueue & { queueStatus: QueueStatus };
 
 interface SidebarProps {
-  queues: ProjectQueue[];
+  queues: QueueWithStatus[];
   selectedProject: string | null;
   onSelectProject: (name: string) => void;
   onCreateQueue: () => void;
@@ -67,6 +69,7 @@ export function Sidebar({ queues, selectedProject, onSelectProject, onCreateQueu
             const status = getSessionStatus(queue);
             const queued = getQueuedCount(queue);
             const isSelected = queue.project === selectedProject;
+            const queueStatus = queue.queueStatus;
 
             return (
               <li key={queue.project} role="listitem">
@@ -98,8 +101,13 @@ export function Sidebar({ queues, selectedProject, onSelectProject, onCreateQueu
                       {queue.directory}
                     </span>
 
-                    {/* Prompt count badge */}
-                    {queued > 0 && (
+                    {/* Queue status badge */}
+                    {queueStatus === 'completed' && (
+                      <span className="mt-1 inline-flex self-start items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-active)]/15 text-[var(--color-active)] leading-none">
+                        completed
+                      </span>
+                    )}
+                    {queueStatus === 'active' && queued > 0 && (
                       <span className="mt-1 inline-flex self-start items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-pending)]/15 text-[var(--color-pending)] leading-none">
                         {queued} queued
                       </span>
