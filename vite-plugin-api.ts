@@ -1,6 +1,6 @@
 import type { Plugin, Connect } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
@@ -24,14 +24,39 @@ function readQueue(project: string): ProjectQueue | null {
 
 function writeQueue(queue: ProjectQueue): void {
   ensureQueuesDir();
-  writeFileSync(queuePath(queue.project), JSON.stringify(queue, null, 2));
+  const filePath = queuePath(queue.project);
+  const tmpPath = `${filePath}.tmp.${process.pid}`;
+  try {
+    writeFileSync(tmpPath, JSON.stringify(queue, null, 2));
+    renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { unlinkSync(tmpPath); } catch {}
+    throw err;
+  }
+}
+
+const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function withComputedSessionStatus(queue: ProjectQueue): ProjectQueue {
+  if (!queue.activeSession) return queue;
+  const lastActivity = new Date(queue.activeSession.lastActivity).getTime();
+  const isStale = Date.now() - lastActivity > SESSION_TIMEOUT_MS;
+  return {
+    ...queue,
+    activeSession: {
+      ...queue.activeSession,
+      status: isStale ? 'idle' : 'active',
+    },
+  };
 }
 
 function listQueues(): ProjectQueue[] {
   ensureQueuesDir();
   return readdirSync(QUEUES_DIR)
     .filter((f) => f.endsWith('.json'))
-    .map((f) => JSON.parse(readFileSync(join(QUEUES_DIR, f), 'utf-8')) as ProjectQueue);
+    .map((f) => withComputedSessionStatus(
+      JSON.parse(readFileSync(join(QUEUES_DIR, f), 'utf-8')) as ProjectQueue,
+    ));
 }
 
 function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -207,7 +232,7 @@ async function handleApi(
     if (method === 'GET') {
       const queue = readQueue(project);
       if (!queue) return jsonError(res, 404, `Queue "${project}" not found`);
-      return json(res, 200, queue);
+      return json(res, 200, withComputedSessionStatus(queue));
     }
 
     if (method === 'POST') {

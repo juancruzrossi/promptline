@@ -49,7 +49,23 @@ RESULT=$(python3 << 'PYEOF'
 import json
 import sys
 import os
+import tempfile
 from datetime import datetime, timezone
+
+def atomic_write(path, obj):
+    """Write JSON atomically: temp file + rename to prevent corruption."""
+    dir_name = os.path.dirname(path)
+    fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(obj, f, indent=2)
+        os.replace(tmp_path, path)
+    except:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 queue_file = os.environ.get("QUEUE_FILE", "")
 session_id = os.environ.get("SESSION_ID", "")
@@ -121,8 +137,7 @@ if next_prompt is None:
     data["prompts"] = prompts
     data["activeSession"] = active
     data["sessionHistory"] = history
-    with open(queue_file, "w") as f:
-        json.dump(data, f, indent=2)
+    atomic_write(queue_file, data)
     print("0")
     sys.exit(0)
 
@@ -134,8 +149,7 @@ data["prompts"] = prompts
 data["activeSession"] = active
 data["sessionHistory"] = history
 
-with open(queue_file, "w") as f:
-    json.dump(data, f, indent=2)
+atomic_write(queue_file, data)
 
 # Count remaining pending prompts (excluding the one we just took)
 remaining = sum(1 for p in prompts if p.get("status") == "pending")
