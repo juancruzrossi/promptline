@@ -1,69 +1,172 @@
 #!/bin/bash
 # prompt-queue.sh
-# Cola de prompts para Claude Code.
-# Lee el siguiente prompt de un archivo, lo envia por stderr y sale con exit 2
-# para que Claude siga trabajando como si el usuario hubiese escrito ese prompt.
-# Si no hay mas prompts, sale con exit 0 y Claude se detiene normalmente.
+# JSON-based prompt queue hook for Claude Code.
+# Reads from ~/.promptline/queues/{project}.json, sends the next pending
+# prompt via stderr, and exits 2 so Claude continues working.
+# If no pending prompts remain, exits 0 and Claude stops normally.
 
 set -euo pipefail
 
-# --- Leer input JSON del hook desde stdin ---
+# --- Read Claude Code hook input from stdin ---
 INPUT=$(cat)
 
-# Ruta fija al archivo de prompts (independiente del proyecto actual)
-PROMPTS_FILE="${PROMPTS_FILE:-/Users/juanchirossi/Documents/Proyectos/prompts.txt}"
+# --- Extract session_id and cwd from input JSON ---
+# Use newline as separator to handle paths with spaces
+PARSED=$(echo "$INPUT" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(data.get('session_id', ''))
+print(data.get('cwd', ''))
+" 2>/dev/null) || PARSED=$'\n'
 
-# --- Validaciones rapidas ---
+SESSION_ID=$(echo "$PARSED" | sed -n '1p')
+CWD=$(echo "$PARSED" | sed -n '2p')
 
-# No existe el archivo -> salir
-if [ ! -f "$PROMPTS_FILE" ]; then
-    exit 0
+# If no cwd, nothing to do
+if [ -z "$CWD" ]; then
+  exit 0
 fi
 
-# Archivo vacio -> salir
-if [ ! -s "$PROMPTS_FILE" ]; then
-    exit 0
+# --- Derive project name from cwd ---
+PROJECT=$(basename "$CWD")
+
+# --- Locate queue file ---
+QUEUE_DIR="$HOME/.promptline/queues"
+QUEUE_FILE="$QUEUE_DIR/$PROJECT.json"
+
+# No queue file -> nothing to do
+if [ ! -f "$QUEUE_FILE" ]; then
+  exit 0
 fi
 
-# Solo whitespace -> limpiar y salir
-if ! grep -qE '[^[:space:]]' "$PROMPTS_FILE"; then
-    : > "$PROMPTS_FILE"
-    exit 0
-fi
+export QUEUE_FILE SESSION_ID
 
-# --- Extraer primer prompt (todo antes del primer ---) ---
-first_prompt=$(awk '/^---[[:space:]]*$/{exit} {print}' "$PROMPTS_FILE")
+# --- Process queue with python3 ---
+# Python handles all JSON manipulation atomically and outputs:
+#   Line 1: EXIT_CODE (0 or 2)
+#   Line 2: PROMPT_TEXT (only when EXIT_CODE=2)
+RESULT=$(python3 << 'PYEOF'
+import json
+import sys
+import os
+from datetime import datetime, timezone
 
-# --- Extraer contenido restante (todo despues del primer ---) ---
-remaining=$(awk 'BEGIN{f=0} /^---[[:space:]]*$/{if(!f){f=1;next}} f{print}' "$PROMPTS_FILE")
+queue_file = os.environ.get("QUEUE_FILE", "")
+session_id = os.environ.get("SESSION_ID", "")
 
-# --- Verificar que el prompt tenga contenido real ---
-if ! echo "$first_prompt" | grep -qE '[^[:space:]]'; then
-    : > "$PROMPTS_FILE"
-    exit 0
-fi
+if not queue_file or not os.path.isfile(queue_file):
+    print("0")
+    sys.exit(0)
 
-# --- Escribir prompts restantes de vuelta al archivo ---
-printf '%s\n' "$remaining" > "$PROMPTS_FILE"
+try:
+    with open(queue_file, "r") as f:
+        data = json.load(f)
+except (json.JSONDecodeError, IOError):
+    print("0")
+    sys.exit(0)
 
-# Si no quedan prompts significativos, limpiar el archivo
-if ! grep -qE '[^[:space:]]' "$PROMPTS_FILE"; then
-    : > "$PROMPTS_FILE"
-fi
+prompts = data.get("prompts", [])
+now = datetime.now(timezone.utc).isoformat()
 
-# --- Contar prompts restantes ---
-if [ -s "$PROMPTS_FILE" ] && grep -qE '[^[:space:]]' "$PROMPTS_FILE"; then
-    separator_count=$(grep -c '^---[[:space:]]*$' "$PROMPTS_FILE" 2>/dev/null || true)
-    remaining_count=$((separator_count + 1))
-else
-    remaining_count=0
-fi
+# Step 1: Mark any currently "running" prompts as "completed"
+for p in prompts:
+    if p.get("status") == "running":
+        p["status"] = "completed"
+        p["completedAt"] = now
 
-# --- Enviar prompt por stderr y bloquear el stop ---
-{
-    echo "===== PromptLine: Ejecutando siguiente prompt (quedan ${remaining_count} en cola) ====="
+# Step 2: Find the first "pending" prompt
+next_prompt = None
+for p in prompts:
+    if p.get("status") == "pending":
+        next_prompt = p
+        break
+
+# Step 3: Handle active session
+active = data.get("activeSession")
+history = data.get("sessionHistory", [])
+
+if next_prompt is None:
+    # No pending prompts -> mark session idle
+    if active is not None:
+        active["status"] = "idle"
+        active["lastActivity"] = now
+        active["currentPromptId"] = None
+    data["prompts"] = prompts
+    data["activeSession"] = active
+    data["sessionHistory"] = history
+    with open(queue_file, "w") as f:
+        json.dump(data, f, indent=2)
+    print("0")
+    sys.exit(0)
+
+# We have a pending prompt -> mark it as running
+next_prompt["status"] = "running"
+
+# Handle session tracking
+if active is None:
+    # Create new session
+    active = {
+        "sessionId": session_id,
+        "status": "active",
+        "startedAt": now,
+        "lastActivity": now,
+        "currentPromptId": next_prompt["id"],
+    }
+elif active.get("sessionId") != session_id and session_id:
+    # Different session -> archive old one
+    completed_count = sum(1 for p in prompts if p.get("status") == "completed")
+    history.append({
+        "sessionId": active["sessionId"],
+        "startedAt": active.get("startedAt", now),
+        "endedAt": now,
+        "promptsExecuted": completed_count,
+    })
+    active = {
+        "sessionId": session_id,
+        "status": "active",
+        "startedAt": now,
+        "lastActivity": now,
+        "currentPromptId": next_prompt["id"],
+    }
+else:
+    # Same session -> update
+    active["status"] = "active"
+    active["lastActivity"] = now
+    active["currentPromptId"] = next_prompt["id"]
+
+data["prompts"] = prompts
+data["activeSession"] = active
+data["sessionHistory"] = history
+
+with open(queue_file, "w") as f:
+    json.dump(data, f, indent=2)
+
+# Count remaining pending prompts (excluding the one we just took)
+remaining = sum(1 for p in prompts if p.get("status") == "pending")
+
+# Output format: EXIT_CODE\nREMAINING\n__PROMPT_DELIMITER__\nprompt text (may be multi-line)
+DELIM = "__PROMPTLINE_DELIM__"
+print("2")
+print(str(remaining))
+print(DELIM)
+print(next_prompt["text"])
+PYEOF
+)
+
+# --- Parse python output ---
+EXIT_CODE=$(echo "$RESULT" | head -n1)
+
+if [ "$EXIT_CODE" = "2" ]; then
+  REMAINING=$(echo "$RESULT" | sed -n '2p')
+  PROMPT_TEXT=$(echo "$RESULT" | sed '1,/^__PROMPTLINE_DELIM__$/d')
+
+  {
+    echo "===== PromptLine: Executing next prompt (${REMAINING} remaining in queue) ====="
     echo ""
-    echo "$first_prompt"
-} >&2
+    echo "$PROMPT_TEXT"
+  } >&2
 
-exit 2
+  exit 2
+fi
+
+exit 0
