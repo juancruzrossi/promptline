@@ -3,10 +3,11 @@ import { api } from '../api/client';
 
 interface AddPromptFormProps {
   project: string;
+  sessionId: string;
   onAdded: () => void;
 }
 
-export function AddPromptForm({ project, onAdded }: AddPromptFormProps) {
+export function AddPromptForm({ project, sessionId, onAdded }: AddPromptFormProps) {
   const [expanded, setExpanded] = useState(false);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -36,7 +37,7 @@ export function AddPromptForm({ project, onAdded }: AddPromptFormProps) {
     if (!trimmed || submitting) return;
     setSubmitting(true);
     try {
-      await api.addPrompt(project, trimmed);
+      await api.addPrompt(project, sessionId, trimmed);
       setText('');
       setExpanded(false);
       onAdded();

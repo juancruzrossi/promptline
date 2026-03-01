@@ -1,6 +1,4 @@
-import type { ProjectQueue, Prompt, QueueStatus } from '../types/queue';
-
-export type QueueWithStatus = ProjectQueue & { queueStatus: QueueStatus };
+import type { ProjectView, Prompt } from '../types/queue';
 
 const BASE = '/api';
 
@@ -13,39 +11,44 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+function projectUrl(project: string): string {
+  return `/projects/${encodeURIComponent(project)}`;
+}
+
+function sessionUrl(project: string, sessionId: string): string {
+  return `${projectUrl(project)}/sessions/${encodeURIComponent(sessionId)}`;
+}
+
 export const api = {
-  listQueues: () => request<QueueWithStatus[]>('/queues'),
+  listProjects: () => request<ProjectView[]>('/projects'),
 
-  getQueue: (project: string) => request<ProjectQueue>(`/queues/${encodeURIComponent(project)}`),
+  getProject: (project: string) => request<ProjectView>(projectUrl(project)),
 
-  createQueue: (project: string, directory: string) =>
-    request<ProjectQueue>(`/queues/${encodeURIComponent(project)}`, {
-      method: 'POST',
-      body: JSON.stringify({ directory }),
-    }),
+  deleteProject: (project: string) =>
+    request<{ deleted: string }>(projectUrl(project), { method: 'DELETE' }),
 
-  deleteQueue: (project: string) =>
-    request<{ deleted: string }>(`/queues/${encodeURIComponent(project)}`, { method: 'DELETE' }),
+  deleteSession: (project: string, sessionId: string) =>
+    request<{ deleted: string }>(sessionUrl(project, sessionId), { method: 'DELETE' }),
 
-  addPrompt: (project: string, text: string) =>
-    request<Prompt>(`/queues/${encodeURIComponent(project)}/prompts`, {
+  addPrompt: (project: string, sessionId: string, text: string) =>
+    request<Prompt>(`${sessionUrl(project, sessionId)}/prompts`, {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),
 
-  updatePrompt: (project: string, id: string, data: Partial<Pick<Prompt, 'text' | 'status'>>) =>
-    request<Prompt>(`/queues/${encodeURIComponent(project)}/prompts/${encodeURIComponent(id)}`, {
-      method: 'PUT',
+  updatePrompt: (project: string, sessionId: string, promptId: string, data: { text?: string }) =>
+    request<Prompt>(`${sessionUrl(project, sessionId)}/prompts/${encodeURIComponent(promptId)}`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     }),
 
-  deletePrompt: (project: string, id: string) =>
-    request<Prompt>(`/queues/${encodeURIComponent(project)}/prompts/${encodeURIComponent(id)}`, {
+  deletePrompt: (project: string, sessionId: string, promptId: string) =>
+    request<Prompt>(`${sessionUrl(project, sessionId)}/prompts/${encodeURIComponent(promptId)}`, {
       method: 'DELETE',
     }),
 
-  reorderPrompts: (project: string, order: string[]) =>
-    request<ProjectQueue>(`/queues/${encodeURIComponent(project)}/prompts/reorder`, {
+  reorderPrompts: (project: string, sessionId: string, order: string[]) =>
+    request<void>(`${sessionUrl(project, sessionId)}/prompts/reorder`, {
       method: 'PUT',
       body: JSON.stringify({ order }),
     }),

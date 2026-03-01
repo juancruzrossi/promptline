@@ -10,26 +10,23 @@ export interface Prompt {
   completedAt: string | null;
 }
 
-export interface ActiveSession {
+export interface SessionQueue {
   sessionId: string;
-  status: SessionStatus;
+  project: string;
+  directory: string;
+  sessionName: string | null;
+  prompts: Prompt[];
   startedAt: string;
   lastActivity: string;
   currentPromptId: string | null;
+  completedAt: string | null;
 }
 
-export interface SessionHistoryEntry {
-  sessionId: string;
-  startedAt: string;
-  endedAt: string;
-  promptsExecuted: number;
-}
+export type SessionWithStatus = SessionQueue & { status: SessionStatus };
 
-export interface ProjectQueue {
+export interface ProjectView {
   project: string;
   directory: string;
-  prompts: Prompt[];
-  activeSession: ActiveSession | null;
-  sessionHistory: SessionHistoryEntry[];
-  completedAt?: string | null;
+  sessions: SessionWithStatus[];
+  queueStatus: QueueStatus;
 }

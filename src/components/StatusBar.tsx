@@ -1,30 +1,31 @@
-import type { ProjectQueue } from '../types/queue';
+import type { ProjectView } from '../types/queue';
 
 interface StatusBarProps {
-  queues: ProjectQueue[];
+  projects: ProjectView[];
 }
 
 interface AggregateStats {
-  active: number;
+  activeSessions: number;
   queued: number;
   completed: number;
 }
 
-function computeStats(queues: ProjectQueue[]): AggregateStats {
-  let active = 0;
+function computeStats(projects: ProjectView[]): AggregateStats {
+  let activeSessions = 0;
   let queued = 0;
   let completed = 0;
 
-  for (const queue of queues) {
-    if (queue.activeSession?.status === 'active') active += 1;
-
-    for (const prompt of queue.prompts) {
-      if (prompt.status === 'pending') queued += 1;
-      if (prompt.status === 'completed') completed += 1;
+  for (const project of projects) {
+    for (const session of project.sessions) {
+      if (session.status === 'active') activeSessions += 1;
+      for (const prompt of session.prompts) {
+        if (prompt.status === 'pending') queued += 1;
+        if (prompt.status === 'completed') completed += 1;
+      }
     }
   }
 
-  return { active, queued, completed };
+  return { activeSessions, queued, completed };
 }
 
 interface StatSegmentProps {
@@ -36,7 +37,7 @@ interface StatSegmentProps {
 function StatSegment({ value, label, color }: StatSegmentProps) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className={`text-[${color}] font-bold`} style={{ color }}>
+      <span className="font-bold" style={{ color }}>
         {value}
       </span>
       <span className="text-[var(--color-muted)]">{label}</span>
@@ -44,15 +45,15 @@ function StatSegment({ value, label, color }: StatSegmentProps) {
   );
 }
 
-export function StatusBar({ queues }: StatusBarProps) {
-  const { active, queued, completed } = computeStats(queues);
+export function StatusBar({ projects }: StatusBarProps) {
+  const { activeSessions, queued, completed } = computeStats(projects);
 
   return (
     <footer
       className="flex items-center gap-4 px-5 h-8 shrink-0 bg-[var(--color-surface)] border-t border-[var(--color-border)]"
       aria-label="Status bar"
     >
-      <StatSegment value={active} label="active" color="var(--color-active)" />
+      <StatSegment value={activeSessions} label="active" color="var(--color-active)" />
 
       <span className="text-[var(--color-border)] select-none" aria-hidden="true">
         ·
