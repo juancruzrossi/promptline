@@ -4,6 +4,7 @@ interface SidebarProps {
   queues: ProjectQueue[];
   selectedProject: string | null;
   onSelectProject: (name: string) => void;
+  onCreateQueue: () => void;
 }
 
 function getSessionStatus(queue: ProjectQueue): 'active' | 'idle' | 'none' {
@@ -40,7 +41,7 @@ function StatusDot({ status }: { status: 'active' | 'idle' | 'none' }) {
   );
 }
 
-export function Sidebar({ queues, selectedProject, onSelectProject }: SidebarProps) {
+export function Sidebar({ queues, selectedProject, onSelectProject, onCreateQueue }: SidebarProps) {
   return (
     <aside
       className="flex flex-col w-[280px] shrink-0 h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
@@ -115,6 +116,23 @@ export function Sidebar({ queues, selectedProject, onSelectProject }: SidebarPro
           })}
         </ul>
       </nav>
+
+      {/* New Queue button */}
+      <div className="shrink-0 p-3 border-t border-[var(--color-border)]">
+        <button
+          type="button"
+          onClick={onCreateQueue}
+          className={[
+            'w-full text-xs text-[var(--color-muted)] py-2.5 px-3 rounded-lg',
+            'border border-dashed border-[var(--color-border)]',
+            'hover:border-[var(--color-active)]/40 hover:text-[var(--color-active)] hover:bg-[var(--color-active)]/5',
+            'transition-all duration-150 focus:outline-none focus:ring-1 focus:ring-[var(--color-active)]/30',
+          ].join(' ')}
+          aria-label="Create new queue"
+        >
+          + New Queue
+        </button>
+      </div>
     </aside>
   );
 }
