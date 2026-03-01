@@ -37,7 +37,7 @@ function writeQueue(queue: ProjectQueue): void {
   }
 }
 
-const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const SESSION_TIMEOUT_MS = 60 * 1000; // 1 minute
 const QUEUE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function withComputedStatus(queue: ProjectQueue): ProjectQueue & { queueStatus: QueueStatus } {
