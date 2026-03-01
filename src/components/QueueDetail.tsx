@@ -14,7 +14,7 @@ interface QueueDetailProps {
 export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
   const { queue, loading, error, refresh } = useQueue(project);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragSourceRef = useRef<string | null>(null);
 
@@ -23,20 +23,21 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
     setDraggingId(id);
   }
 
-  function handleDragEnter(id: string) {
+  function handleDragOver(id: string, position: 'before' | 'after') {
     if (dragSourceRef.current && dragSourceRef.current !== id) {
-      setDragOverId(id);
+      setDragOver({ id, position });
     }
   }
 
   function handleDragEnd() {
-    setDragOverId(null);
+    setDragOver(null);
     setDraggingId(null);
     dragSourceRef.current = null;
   }
 
   function handleDrop(targetId: string) {
     const sourceId = dragSourceRef.current;
+    const position = dragOver?.position ?? 'before';
     if (!sourceId || sourceId === targetId || !queue) {
       handleDragEnd();
       return;
@@ -52,7 +53,10 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
 
     const reordered = [...pendingPrompts];
     const [moved] = reordered.splice(sourceIndex, 1);
-    reordered.splice(targetIndex, 0, moved);
+    // After removing source, target shifts down if source was before it
+    const adjustedTarget = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    const insertAt = position === 'after' ? adjustedTarget + 1 : adjustedTarget;
+    reordered.splice(insertAt, 0, moved);
 
     const newOrder = reordered.map((p) => p.id);
     handleDragEnd();
@@ -101,10 +105,10 @@ export function QueueDetail({ project, onQueueDeleted }: QueueDetailProps) {
         project={project}
         onMutate={refresh}
         onDragStart={reorderable ? handleDragStart : undefined}
-        onDragEnter={reorderable ? handleDragEnter : undefined}
+        onDragOver={reorderable ? handleDragOver : undefined}
         onDragEnd={reorderable ? handleDragEnd : undefined}
         onDrop={reorderable ? handleDrop : undefined}
-        isDragOver={dragOverId === prompt.id}
+        dropPosition={dragOver?.id === prompt.id ? dragOver.position : null}
         isDragging={draggingId === prompt.id}
       />
     ));

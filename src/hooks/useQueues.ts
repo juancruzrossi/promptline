@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ProjectQueue } from '../types/queue';
-import { api } from '../api/client';
+import { api, type QueueWithStatus } from '../api/client';
 
 export function useQueues(pollIntervalMs = 2000) {
-  const [queues, setQueues] = useState<ProjectQueue[]>([]);
+  const [queues, setQueues] = useState<QueueWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

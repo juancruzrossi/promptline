@@ -7,10 +7,10 @@ interface PromptCardProps {
   project: string;
   onMutate: () => void;
   onDragStart?: (id: string) => void;
-  onDragEnter?: (id: string) => void;
+  onDragOver?: (id: string, position: 'before' | 'after') => void;
   onDragEnd?: () => void;
   onDrop?: (targetId: string) => void;
-  isDragOver?: boolean;
+  dropPosition?: 'before' | 'after' | null;
   isDragging?: boolean;
 }
 
@@ -37,10 +37,10 @@ export function PromptCard({
   project,
   onMutate,
   onDragStart,
-  onDragEnter,
+  onDragOver,
   onDragEnd,
   onDrop,
-  isDragOver = false,
+  dropPosition = null,
   isDragging = false,
 }: PromptCardProps) {
   const [editing, setEditing] = useState(false);
@@ -123,10 +123,7 @@ export function PromptCard({
 
   return (
     <div
-      className={[
-        'relative group transition-all duration-150',
-        isDragOver ? 'pt-1' : '',
-      ].join(' ')}
+      className="relative group transition-all duration-150"
       draggable={isPending && !editing}
       onDragStart={isPending && !editing ? (e) => {
         e.dataTransfer.effectAllowed = 'move';
@@ -136,10 +133,9 @@ export function PromptCard({
       onDragOver={isPending ? (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-      } : undefined}
-      onDragEnter={isPending ? (e) => {
-        e.preventDefault();
-        onDragEnter?.(prompt.id);
+        const rect = e.currentTarget.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        onDragOver?.(prompt.id, e.clientY < midY ? 'before' : 'after');
       } : undefined}
       onDrop={isPending ? (e) => {
         e.preventDefault();
@@ -148,10 +144,17 @@ export function PromptCard({
       onDragEnd={onDragEnd}
       aria-label={`Prompt: ${prompt.text.slice(0, 50)}`}
     >
-      {/* Drop indicator */}
-      {isDragOver && (
+      {/* Drop indicator — top */}
+      {dropPosition === 'before' && (
         <div
           className="absolute top-0 left-2 right-2 h-0.5 rounded-full bg-[var(--color-active)] shadow-[0_0_6px_var(--color-active)]"
+          aria-hidden="true"
+        />
+      )}
+      {/* Drop indicator — bottom */}
+      {dropPosition === 'after' && (
+        <div
+          className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-[var(--color-active)] shadow-[0_0_6px_var(--color-active)]"
           aria-hidden="true"
         />
       )}

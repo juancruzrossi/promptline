@@ -34,12 +34,12 @@ PROJECT=$(basename "$CWD")
 QUEUE_DIR="$HOME/.promptline/queues"
 QUEUE_FILE="$QUEUE_DIR/$PROJECT.json"
 
-# No queue file -> nothing to do
+export QUEUE_FILE SESSION_ID CWD PROJECT
+
+# No queue file -> nothing to do (SessionStart hook handles registration)
 if [ ! -f "$QUEUE_FILE" ]; then
   exit 0
 fi
-
-export QUEUE_FILE SESSION_ID
 
 # --- Process queue with python3 ---
 # Python handles all JSON manipulation atomically and outputs:
@@ -89,6 +89,11 @@ for p in prompts:
     if p.get("status") == "running":
         p["status"] = "completed"
         p["completedAt"] = now
+
+# Step 1b: Track completedAt when all prompts are done
+all_done = all(p.get("status") == "completed" for p in prompts) and len(prompts) > 0
+if all_done and not data.get("completedAt"):
+    data["completedAt"] = now
 
 # Step 2: Find the first "pending" prompt
 next_prompt = None

@@ -1,4 +1,6 @@
-import type { ProjectQueue, Prompt } from '../types/queue';
+import type { ProjectQueue, Prompt, QueueStatus } from '../types/queue';
+
+export type QueueWithStatus = ProjectQueue & { queueStatus: QueueStatus };
 
 const BASE = '/api';
 
@@ -12,7 +14,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listQueues: () => request<ProjectQueue[]>('/queues'),
+  listQueues: () => request<QueueWithStatus[]>('/queues'),
 
   getQueue: (project: string) => request<ProjectQueue>(`/queues/${encodeURIComponent(project)}`),
 

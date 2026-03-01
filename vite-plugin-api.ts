@@ -1,10 +1,10 @@
 import type { Plugin, Connect } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
-import type { ProjectQueue, Prompt, PromptStatus } from './src/types/queue.ts';
+import type { ProjectQueue, Prompt, PromptStatus, QueueStatus } from './src/types/queue.ts';
 
 const QUEUES_DIR = join(homedir(), '.promptline', 'queues');
 
@@ -37,28 +37,49 @@ function writeQueue(queue: ProjectQueue): void {
   }
 }
 
-const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const SESSION_TIMEOUT_MS = 60 * 1000; // 1 minute
+const QUEUE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-function withComputedSessionStatus(queue: ProjectQueue): ProjectQueue {
-  if (!queue.activeSession) return queue;
-  const lastActivity = new Date(queue.activeSession.lastActivity).getTime();
-  const isStale = Date.now() - lastActivity > SESSION_TIMEOUT_MS;
-  return {
-    ...queue,
-    activeSession: {
-      ...queue.activeSession,
-      status: isStale ? 'idle' : 'active',
-    },
-  };
+function withComputedStatus(queue: ProjectQueue): ProjectQueue & { queueStatus: QueueStatus } {
+  let activeSession = queue.activeSession;
+  if (activeSession) {
+    const hasRunningPrompt = queue.prompts.some(p => p.status === 'running');
+    const lastActivity = new Date(activeSession.lastActivity).getTime();
+    const isStale = Date.now() - lastActivity > SESSION_TIMEOUT_MS;
+    // A running prompt means Claude is working — session is active regardless of timeout
+    activeSession = { ...activeSession, status: (hasRunningPrompt || !isStale) ? 'active' : 'idle' };
+  }
+
+  const hasPrompts = queue.prompts.length > 0;
+  const allCompleted = hasPrompts && queue.prompts.every(p => p.status === 'completed');
+  const queueStatus: QueueStatus = allCompleted ? 'completed' : hasPrompts ? 'active' : 'empty';
+
+  return { ...queue, activeSession, queueStatus };
 }
 
-function listQueues(): ProjectQueue[] {
+function listQueues(): (ProjectQueue & { queueStatus: QueueStatus })[] {
   ensureQueuesDir();
+  const now = Date.now();
   return readdirSync(QUEUES_DIR)
     .filter((f) => f.endsWith('.json'))
-    .map((f) => withComputedSessionStatus(
-      JSON.parse(readFileSync(join(QUEUES_DIR, f), 'utf-8')) as ProjectQueue,
-    ));
+    .map((f) => {
+      try {
+        return withComputedStatus(JSON.parse(readFileSync(join(QUEUES_DIR, f), 'utf-8')) as ProjectQueue);
+      } catch { return null; }
+    })
+    .filter((q): q is NonNullable<typeof q> => {
+      if (!q) return false;
+      // Hide completed queues older than 7 days
+      if (q.queueStatus === 'completed' && q.completedAt) {
+        return now - new Date(q.completedAt).getTime() < QUEUE_RETENTION_MS;
+      }
+      // Hide empty queues with idle/no session (no prompts + no active work = noise)
+      if (q.queueStatus === 'empty') {
+        const hasActiveSession = q.activeSession?.status === 'active';
+        if (!hasActiveSession) return false;
+      }
+      return true;
+    });
 }
 
 function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -234,7 +255,7 @@ async function handleApi(
     if (method === 'GET') {
       const queue = readQueue(project);
       if (!queue) return jsonError(res, 404, `Queue "${project}" not found`);
-      return json(res, 200, withComputedSessionStatus(queue));
+      return json(res, 200, withComputedStatus(queue));
     }
 
     if (method === 'POST') {
@@ -261,10 +282,11 @@ async function handleApi(
 
     if (method === 'DELETE') {
       const filePath = queuePath(project);
-      if (!existsSync(filePath)) {
+      try {
+        unlinkSync(filePath);
+      } catch {
         return jsonError(res, 404, `Queue "${project}" not found`);
       }
-      unlinkSync(filePath);
       return json(res, 200, { deleted: project });
     }
 

@@ -1,5 +1,6 @@
 export type PromptStatus = 'pending' | 'running' | 'completed';
 export type SessionStatus = 'active' | 'idle';
+export type QueueStatus = 'active' | 'completed' | 'empty';
 
 export interface Prompt {
   id: string;
@@ -30,4 +31,5 @@ export interface ProjectQueue {
   prompts: Prompt[];
   activeSession: ActiveSession | null;
   sessionHistory: SessionHistoryEntry[];
+  completedAt?: string | null;
 }
