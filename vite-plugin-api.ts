@@ -43,9 +43,11 @@ const QUEUE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 function withComputedStatus(queue: ProjectQueue): ProjectQueue & { queueStatus: QueueStatus } {
   let activeSession = queue.activeSession;
   if (activeSession) {
+    const hasRunningPrompt = queue.prompts.some(p => p.status === 'running');
     const lastActivity = new Date(activeSession.lastActivity).getTime();
     const isStale = Date.now() - lastActivity > SESSION_TIMEOUT_MS;
-    activeSession = { ...activeSession, status: isStale ? 'idle' : 'active' };
+    // A running prompt means Claude is working — session is active regardless of timeout
+    activeSession = { ...activeSession, status: (hasRunningPrompt || !isStale) ? 'active' : 'idle' };
   }
 
   const hasPrompts = queue.prompts.length > 0;
