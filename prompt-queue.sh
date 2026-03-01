@@ -34,12 +34,37 @@ PROJECT=$(basename "$CWD")
 QUEUE_DIR="$HOME/.promptline/queues"
 QUEUE_FILE="$QUEUE_DIR/$PROJECT.json"
 
-# No queue file -> nothing to do
+export QUEUE_FILE SESSION_ID CWD PROJECT
+
+# No queue file -> create one automatically
 if [ ! -f "$QUEUE_FILE" ]; then
+  mkdir -p "$QUEUE_DIR"
+  python3 -c "
+import json, os, tempfile
+from datetime import datetime, timezone
+queue_file = os.environ['QUEUE_FILE']
+data = {
+    'project': os.environ['PROJECT'],
+    'directory': os.environ['CWD'],
+    'prompts': [],
+    'activeSession': {
+        'sessionId': os.environ.get('SESSION_ID', ''),
+        'status': 'active',
+        'startedAt': datetime.now(timezone.utc).isoformat(),
+        'lastActivity': datetime.now(timezone.utc).isoformat(),
+        'currentPromptId': None,
+    },
+    'sessionHistory': [],
+}
+dir_name = os.path.dirname(queue_file)
+fd, tmp = tempfile.mkstemp(dir=dir_name, suffix='.tmp')
+with os.fdopen(fd, 'w') as f:
+    json.dump(data, f, indent=2)
+os.replace(tmp, queue_file)
+"
+  # Queue created but no prompts to process
   exit 0
 fi
-
-export QUEUE_FILE SESSION_ID
 
 # --- Process queue with python3 ---
 # Python handles all JSON manipulation atomically and outputs:
@@ -89,6 +114,11 @@ for p in prompts:
     if p.get("status") == "running":
         p["status"] = "completed"
         p["completedAt"] = now
+
+# Step 1b: Track completedAt when all prompts are done
+all_done = all(p.get("status") == "completed" for p in prompts) and len(prompts) > 0
+if all_done and not data.get("completedAt"):
+    data["completedAt"] = now
 
 # Step 2: Find the first "pending" prompt
 next_prompt = None
