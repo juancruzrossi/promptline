@@ -52,7 +52,6 @@ export function withComputedStatus(session: SessionQueue): SessionQueue & { stat
 export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
   if (hasPendingWork(session)) return true;
   if (session.closedAt != null) return false;
-  if (!session.sessionName) return false;
   const msSinceStart = now - new Date(session.startedAt).getTime();
   return msSinceStart <= SESSION_ABANDONED_TIMEOUT_MS;
 }
@@ -151,8 +150,7 @@ export function deletePrompt(session: SessionQueue, promptId: string): Prompt | 
 }
 
 export function clearPrompts(session: SessionQueue): Prompt[] {
-  const removed = session.prompts.splice(0);
-  return removed;
+  return session.prompts.splice(0);
 }
 
 export function reorderPrompts(session: SessionQueue, order: string[]): string | null {
