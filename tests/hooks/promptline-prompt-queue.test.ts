@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createTmpDir, removeTmpDir, makePrompt } from '../backend/helpers.ts';
 
@@ -147,14 +147,24 @@ describe('promptline-prompt-queue.sh', () => {
     expect(updated.currentPromptId).toBeNull();
   });
 
-  it('exits 0 when no session file exists', () => {
+  it('creates session file when none exists', () => {
     const output = runHook(
       HOOK_PATH,
-      hookInput('nonexistent', 'myapp'),
+      hookInput('new-session', 'myapp'),
       homeDir,
     );
 
     expect(output.trim()).toBe('');
+
+    const filePath = join(homeDir, '.promptline/queues/myapp/new-session.json');
+    expect(existsSync(filePath)).toBe(true);
+
+    const created = JSON.parse(readFileSync(filePath, 'utf-8'));
+    expect(created.sessionId).toBe('new-session');
+    expect(created.project).toBe('myapp');
+    expect(created.directory).toBe('/projects/myapp');
+    expect(created.closedAt).toBeNull();
+    expect(created.prompts).toEqual([]);
   });
 
   it('exits 0 when cwd is empty', () => {
