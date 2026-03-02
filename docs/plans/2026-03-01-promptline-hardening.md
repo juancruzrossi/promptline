@@ -105,7 +105,7 @@ function writeQueue(queue: ProjectQueue): void {
 **Step 2: Verify the API still works**
 
 ```bash
-cd /Users/juanchirossi/Documents/Proyectos/promptline
+cd promptline
 npm run dev &
 sleep 3
 # Test create queue
