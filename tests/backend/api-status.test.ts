@@ -183,8 +183,8 @@ describe('Status computation', () => {
     it('shows empty unclosed sessions when lastActivity is within empty idle timeout', () => {
       const now = Date.now();
       const session = makeSession({
-        startedAt: new Date(now - 2 * 60_000).toISOString(),
-        lastActivity: new Date(now - 2 * 60_000).toISOString(),
+        startedAt: new Date(now - 30_000).toISOString(),
+        lastActivity: new Date(now - 30_000).toISOString(),
         closedAt: null,
         prompts: [],
       });

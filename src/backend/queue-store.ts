@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, ProjectView, SessionWithStatus } from '../types/queue.ts';
 
 export const SESSION_ACTIVE_TIMEOUT_MS = 60_000;
-export const SESSION_EMPTY_IDLE_TIMEOUT_MS = 5 * 60_000; // 5 min: hide empty ghost sessions
+export const SESSION_EMPTY_IDLE_TIMEOUT_MS = SESSION_ACTIVE_TIMEOUT_MS;
 export const SESSION_ABANDONED_TIMEOUT_MS = 24 * 60 * 60_000; // 24h safety net
 const LOCK_STALE_MS = 10_000;
 
