@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createTmpDir, removeTmpDir, makePrompt } from '../backend/helpers.ts';
 
-const HOOK_PATH = resolve(__dirname, '../../prompt-queue.sh');
+const HOOK_PATH = resolve(__dirname, '../../promptline-prompt-queue.sh');
 
 function runHook(
   hookPath: string,
@@ -36,7 +36,7 @@ function hookInput(sessionId: string, project: string) {
   };
 }
 
-describe('prompt-queue.sh', () => {
+describe('promptline-prompt-queue.sh', () => {
   let homeDir: string;
 
   beforeEach(() => {

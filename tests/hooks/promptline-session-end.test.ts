@@ -4,11 +4,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 
-const SCRIPT_PATH = join(import.meta.dirname, '..', '..', 'session-end.sh');
+const SCRIPT_PATH = join(import.meta.dirname, '..', '..', 'promptline-session-end.sh');
 
 function runHook(input: object, env: Record<string, string> = {}): { exitCode: number } {
   try {
-    execSync(`echo '${JSON.stringify(input)}' | bash "${SCRIPT_PATH}"`, {
+    execSync(`bash "${SCRIPT_PATH}"`, {
+      input: JSON.stringify(input),
       env: { ...process.env, ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -19,7 +20,7 @@ function runHook(input: object, env: Record<string, string> = {}): { exitCode: n
   }
 }
 
-describe('session-end.sh', () => {
+describe('promptline-session-end.sh', () => {
   let fakeHome: string;
   const sessionId = 'test-session-abc';
   const project = 'my-project';

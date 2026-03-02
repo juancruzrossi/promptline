@@ -36,7 +36,7 @@ describe('Error handling', () => {
 
   describe('loadProjectView', () => {
     it('returns null for a non-existent directory', () => {
-      const result = loadProjectView('ghost', join(tmpDir, 'ghost'));
+      const result = loadProjectView(tmpDir, 'ghost');
       expect(result).toBeNull();
     });
 
@@ -51,7 +51,7 @@ describe('Error handling', () => {
       // Write a corrupted file
       writeFileSync(join(projDir, 'corrupted.json'), '{{bad json}}');
 
-      const view = loadProjectView('proj', projDir);
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
       expect(view!.sessions).toHaveLength(1);
       expect(view!.sessions[0].sessionId).toBe(session.sessionId);
@@ -63,7 +63,7 @@ describe('Error handling', () => {
       writeFileSync(join(projDir, 'bad1.json'), 'nope');
       writeFileSync(join(projDir, 'bad2.json'), '!!!');
 
-      const view = loadProjectView('proj', projDir);
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).toBeNull();
     });
   });

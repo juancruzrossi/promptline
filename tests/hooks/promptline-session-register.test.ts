@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createTmpDir, removeTmpDir } from '../backend/helpers.ts';
 
-const HOOK_PATH = resolve(__dirname, '../../session-register.sh');
+const HOOK_PATH = resolve(__dirname, '../../promptline-session-register.sh');
 
 function runHook(
   hookPath: string,
@@ -19,7 +19,7 @@ function runHook(
   });
 }
 
-describe('session-register.sh', () => {
+describe('promptline-session-register.sh', () => {
   let homeDir: string;
 
   beforeEach(() => {

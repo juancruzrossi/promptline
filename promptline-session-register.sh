@@ -1,5 +1,5 @@
 #!/bin/bash
-# session-register.sh
+# promptline-session-register.sh
 # SessionStart hook: auto-creates per-session queue file when Claude Code opens.
 # Stores at ~/.promptline/queues/{project}/{session_id}.json
 # Extracts session name from the transcript's first user message.

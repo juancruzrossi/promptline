@@ -2,8 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, rename
 import { join } from 'node:path';
 import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, ProjectView, SessionWithStatus } from '../types/queue.ts';
 
-export const SESSION_TIMEOUT_MS = 60_000;
-export const STALE_SESSION_MS = 5 * 60 * 1000;
+export const SESSION_ACTIVE_TIMEOUT_MS = 60_000;
+export const SESSION_VISIBLE_TIMEOUT_MS = 5 * SESSION_ACTIVE_TIMEOUT_MS;
 
 export function ensureProjectDir(queuesDir: string, project: string): void {
   mkdirSync(join(queuesDir, project), { recursive: true });
@@ -34,31 +34,29 @@ export function writeSession(queuesDir: string, project: string, session: Sessio
   }
 }
 
-export function withComputedStatus(session: SessionQueue): SessionQueue & { status: SessionStatus } {
-  const hasRunningPrompt = session.prompts.some(p => p.status === 'running');
-  const lastActivity = new Date(session.lastActivity).getTime();
-  const isStale = Date.now() - lastActivity > SESSION_TIMEOUT_MS;
-  const status: SessionStatus = (hasRunningPrompt || !isStale) ? 'active' : 'idle';
-  return { ...session, status };
+function msSinceLastActivity(session: SessionQueue, now: number = Date.now()): number {
+  return now - new Date(session.lastActivity).getTime();
 }
 
 function hasPendingWork(session: SessionQueue): boolean {
   return session.prompts.some(p => p.status === 'pending' || p.status === 'running');
 }
 
-export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
-  if (hasPendingWork(session)) return true;
-
-  const isClosed = session.closedAt != null;
-  const lastActivity = new Date(session.lastActivity).getTime();
-  const isStale = now - lastActivity > STALE_SESSION_MS;
-
-  if (isClosed || isStale) return false;
-
-  return true;
+export function withComputedStatus(session: SessionQueue): SessionQueue & { status: SessionStatus } {
+  const hasRunningPrompt = session.prompts.some(p => p.status === 'running');
+  const isStale = msSinceLastActivity(session) > SESSION_ACTIVE_TIMEOUT_MS;
+  const status: SessionStatus = (hasRunningPrompt || !isStale) ? 'active' : 'idle';
+  return { ...session, status };
 }
 
-export function loadProjectView(project: string, dirPath: string): ProjectView | null {
+export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
+  if (hasPendingWork(session)) return true;
+  if (session.closedAt != null) return false;
+  return msSinceLastActivity(session, now) <= SESSION_VISIBLE_TIMEOUT_MS;
+}
+
+export function loadProjectView(queuesDir: string, project: string): ProjectView | null {
+  const dirPath = join(queuesDir, project);
   let files: string[];
   try {
     files = readdirSync(dirPath).filter(f => f.endsWith('.json'));
@@ -70,10 +68,9 @@ export function loadProjectView(project: string, dirPath: string): ProjectView |
 
   const sessions = files
     .map(f => {
-      try {
-        const raw = JSON.parse(readFileSync(join(dirPath, f), 'utf-8')) as SessionQueue;
-        return withComputedStatus(raw);
-      } catch { return null; }
+      const sessionId = f.replace(/\.json$/, '');
+      const raw = readSession(queuesDir, project, sessionId);
+      return raw ? withComputedStatus(raw) : null;
     })
     .filter((s): s is NonNullable<typeof s> => s !== null)
     .filter((s: SessionWithStatus) => isSessionVisible(s, now));
@@ -90,16 +87,18 @@ export function loadProjectView(project: string, dirPath: string): ProjectView |
 }
 
 export function listProjects(queuesDir: string): ProjectView[] {
-  mkdirSync(queuesDir, { recursive: true });
-
-  return readdirSync(queuesDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(dir => loadProjectView(dir.name, join(queuesDir, dir.name)))
-    .filter((p): p is NonNullable<typeof p> => p !== null);
+  try {
+    return readdirSync(queuesDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(dir => loadProjectView(queuesDir, dir.name))
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+  } catch {
+    return [];
+  }
 }
 
 export function getProject(queuesDir: string, project: string): ProjectView | null {
-  return loadProjectView(project, join(queuesDir, project));
+  return loadProjectView(queuesDir, project);
 }
 
 export function deleteProject(queuesDir: string, project: string): void {

@@ -1,5 +1,5 @@
 #!/bin/bash
-# session-end.sh
+# promptline-session-end.sh
 # SessionEnd hook: marks a session as closed when Claude Code exits.
 # Updates closedAt and lastActivity in ~/.promptline/queues/{project}/{session_id}.json
 
@@ -23,11 +23,6 @@ fi
 
 PROJECT=$(basename "$CWD")
 QUEUE_FILE="$HOME/.promptline/queues/$PROJECT/$SESSION_ID.json"
-
-if [ ! -f "$QUEUE_FILE" ]; then
-  exit 0
-fi
-
 export QUEUE_FILE
 
 python3 << 'PYEOF'

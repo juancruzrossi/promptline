@@ -1,5 +1,5 @@
 #!/bin/bash
-# prompt-queue.sh — Stop hook for Claude Code.
+# promptline-prompt-queue.sh — Stop hook for Claude Code.
 # Reads from ~/.promptline/queues/{project}/{session_id}.json.
 # If a pending prompt exists, outputs {"decision":"block","reason":"..."}
 # so Claude continues with the next queued prompt.
