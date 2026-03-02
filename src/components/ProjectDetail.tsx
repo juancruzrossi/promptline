@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProject } from '../hooks/useQueue';
+import { selectProject } from '../hooks/useQueue';
 import { api } from '../api/client';
 import type { ProjectView, SessionWithStatus } from '../types/queue';
 import { SessionSection } from './SessionSection';
@@ -7,7 +7,6 @@ import { SessionSection } from './SessionSection';
 interface ProjectDetailProps {
   project: string;
   projects: ProjectView[];
-  refresh: () => Promise<void>;
   onProjectDeleted: () => void;
 }
 
@@ -16,8 +15,8 @@ function isVisible(session: SessionWithStatus): boolean {
   return session.prompts.some(p => p.status === 'pending' || p.status === 'running');
 }
 
-export function ProjectDetail({ project, projects, refresh, onProjectDeleted }: ProjectDetailProps) {
-  const { projectView, loading, error } = useProject({ project, projects, loading: false, error: null, refresh });
+export function ProjectDetail({ project, projects, onProjectDeleted }: ProjectDetailProps) {
+  const projectView = selectProject(project, projects);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   async function handleDeleteProject() {
@@ -31,22 +30,6 @@ export function ProjectDetail({ project, projects, refresh, onProjectDeleted }: 
     } catch {
       // Silent fail
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-sm text-[var(--color-muted)] animate-pulse">Loading...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-sm text-red-400">Error: {error}</p>
-      </div>
-    );
   }
 
   if (!projectView) return null;
@@ -104,7 +87,7 @@ export function ProjectDetail({ project, projects, refresh, onProjectDeleted }: 
             key={session.sessionId}
             session={session}
             project={project}
-            onMutate={refresh}
+            onMutate={() => {}}
             defaultExpanded
           />
         ))}
@@ -137,7 +120,7 @@ export function ProjectDetail({ project, projects, refresh, onProjectDeleted }: 
                     key={session.sessionId}
                     session={session}
                     project={project}
-                    onMutate={refresh}
+                    onMutate={() => {}}
                     defaultExpanded={false}
                   />
                 ))}
