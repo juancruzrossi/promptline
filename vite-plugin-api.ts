@@ -1,6 +1,7 @@
 import type { Plugin, Connect } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, rmSync, watch } from 'node:fs';
+import type { FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
@@ -145,16 +146,89 @@ function jsonError(res: ServerResponse, status: number, message: string): void {
   json(res, status, { error: message });
 }
 
+// --- SSE connection manager ---
+const sseClients = new Set<ServerResponse>();
+let fsWatcher: FSWatcher | null = null;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+const DEBOUNCE_MS = 200;
+
+function broadcastProjects(): void {
+  const data = JSON.stringify(listProjects());
+  const message = `event: projects\ndata: ${data}\n\n`;
+  for (const client of sseClients) {
+    client.write(message);
+  }
+}
+
+function startWatcher(): void {
+  if (fsWatcher) return;
+  mkdirSync(QUEUES_DIR, { recursive: true });
+  try {
+    fsWatcher = watch(QUEUES_DIR, { recursive: true }, (_event, filename) => {
+      if (!filename || !filename.endsWith('.json')) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(broadcastProjects, DEBOUNCE_MS);
+    });
+  } catch {
+    // fs.watch not supported — SSE will work but without auto-push
+  }
+}
+
+function stopWatcher(): void {
+  if (fsWatcher) {
+    fsWatcher.close();
+    fsWatcher = null;
+  }
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+}
+
+function handleSSE(_req: IncomingMessage, res: ServerResponse): void {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  // Send initial state
+  const data = JSON.stringify(listProjects());
+  res.write(`event: projects\ndata: ${data}\n\n`);
+
+  sseClients.add(res);
+
+  res.on('close', () => {
+    sseClients.delete(res);
+  });
+}
+
 export default function apiPlugin(): Plugin {
   return {
     name: 'promptline-api',
     configureServer(server) {
+      startWatcher();
+
+      server.httpServer?.on('close', () => {
+        stopWatcher();
+        for (const client of sseClients) {
+          client.end();
+        }
+        sseClients.clear();
+      });
+
       server.middlewares.use(((req: IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
         const url = req.url ?? '';
         const method = req.method ?? 'GET';
 
         if (!url.startsWith('/api/')) {
           next();
+          return;
+        }
+
+        // SSE endpoint
+        if (url === '/api/events' && method === 'GET') {
+          handleSSE(req, res);
           return;
         }
 

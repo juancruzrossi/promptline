@@ -5,7 +5,7 @@ import { StatusBar } from './components/StatusBar';
 import { ProjectDetail } from './components/ProjectDetail';
 
 function App() {
-  const { projects, loading, error } = useProjects();
+  const { projects, loading, error, refresh } = useProjects();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
   function handleProjectDeleted() {
@@ -46,6 +46,8 @@ function App() {
           {!loading && !error && selectedProject && (
             <ProjectDetail
               project={selectedProject}
+              projects={projects}
+              refresh={refresh}
               onProjectDeleted={handleProjectDeleted}
             />
           )}
