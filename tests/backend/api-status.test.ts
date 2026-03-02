@@ -5,7 +5,7 @@ import {
   writeSession,
   loadProjectView,
   isSessionVisible,
-  SESSION_VISIBLE_TIMEOUT_MS,
+  SESSION_ABANDONED_TIMEOUT_MS,
 } from '../../src/backend/queue-store.ts';
 
 describe('Status computation', () => {
@@ -168,22 +168,36 @@ describe('Status computation', () => {
       expect(isSessionVisible(session)).toBe(true);
     });
 
-    it('hides stale sessions (>5min) without pending work', () => {
+    it('shows open sessions even if lastActivity is stale', () => {
+      const now = Date.now();
       const session = makeSession({
-        lastActivity: new Date(Date.now() - SESSION_VISIBLE_TIMEOUT_MS - 1000).toISOString(),
+        startedAt: new Date(now - 10 * 60_000).toISOString(),
+        lastActivity: new Date(now - 10 * 60_000).toISOString(),
         closedAt: null,
         prompts: [],
       });
-      expect(isSessionVisible(session)).toBe(false);
+      expect(isSessionVisible(session, now)).toBe(true);
+    });
+
+    it('hides abandoned sessions (>24h old, no closedAt)', () => {
+      const now = Date.now();
+      const session = makeSession({
+        startedAt: new Date(now - SESSION_ABANDONED_TIMEOUT_MS - 1000).toISOString(),
+        lastActivity: new Date(now - SESSION_ABANDONED_TIMEOUT_MS - 1000).toISOString(),
+        closedAt: null,
+        prompts: [],
+      });
+      expect(isSessionVisible(session, now)).toBe(false);
     });
 
     it('shows stale sessions that have pending prompts', () => {
+      const now = Date.now();
       const session = makeSession({
-        lastActivity: new Date(Date.now() - SESSION_VISIBLE_TIMEOUT_MS - 1000).toISOString(),
+        lastActivity: new Date(now - 10 * 60_000).toISOString(),
         closedAt: null,
         prompts: [makePrompt({ status: 'pending' })],
       });
-      expect(isSessionVisible(session)).toBe(true);
+      expect(isSessionVisible(session, now)).toBe(true);
     });
 
     it('shows active non-closed sessions', () => {
@@ -239,7 +253,7 @@ describe('Status computation', () => {
       expect(view!.sessions).toHaveLength(1);
     });
 
-    it('filters out stale sessions (>5min) without pending work', () => {
+    it('keeps open stale sessions visible (not abandoned)', () => {
       const active = makeSession({
         project: 'proj',
         lastActivity: new Date().toISOString(),
@@ -247,12 +261,34 @@ describe('Status computation', () => {
       });
       const stale = makeSession({
         project: 'proj',
-        lastActivity: new Date(Date.now() - SESSION_VISIBLE_TIMEOUT_MS - 1000).toISOString(),
+        startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+        lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
         closedAt: null,
         prompts: [],
       });
       writeSession(tmpDir, 'proj', active);
       writeSession(tmpDir, 'proj', stale);
+
+      const view = loadProjectView(tmpDir, 'proj');
+      expect(view).not.toBeNull();
+      expect(view!.sessions).toHaveLength(2);
+    });
+
+    it('filters out abandoned sessions (>24h)', () => {
+      const active = makeSession({
+        project: 'proj',
+        lastActivity: new Date().toISOString(),
+        closedAt: null,
+      });
+      const abandoned = makeSession({
+        project: 'proj',
+        startedAt: new Date(Date.now() - SESSION_ABANDONED_TIMEOUT_MS - 1000).toISOString(),
+        lastActivity: new Date(Date.now() - SESSION_ABANDONED_TIMEOUT_MS - 1000).toISOString(),
+        closedAt: null,
+        prompts: [],
+      });
+      writeSession(tmpDir, 'proj', active);
+      writeSession(tmpDir, 'proj', abandoned);
 
       const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
