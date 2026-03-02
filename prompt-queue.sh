@@ -1,9 +1,9 @@
 #!/bin/bash
-# prompt-queue.sh
-# JSON-based prompt queue hook for Claude Code.
-# Reads from ~/.promptline/queues/{project}/{session_id}.json,
-# sends the next pending prompt via stderr, and exits 2 so Claude
-# continues working. If no pending prompts remain, exits 0.
+# prompt-queue.sh — Stop hook for Claude Code.
+# Reads from ~/.promptline/queues/{project}/{session_id}.json.
+# If a pending prompt exists, outputs {"decision":"block","reason":"..."}
+# so Claude continues with the next queued prompt.
+# If no pending prompts remain, exits 0 (Claude stops normally).
 
 set -euo pipefail
 
@@ -17,11 +17,13 @@ data = json.load(sys.stdin)
 print(data.get('session_id', ''))
 print(data.get('cwd', ''))
 print(data.get('transcript_path', ''))
-" 2>/dev/null) || PARSED=$'\n\n'
+print(data.get('stop_hook_active', False))
+" 2>/dev/null) || PARSED=$'\n\n\n'
 
 SESSION_ID=$(echo "$PARSED" | sed -n '1p')
 CWD=$(echo "$PARSED" | sed -n '2p')
 TRANSCRIPT_PATH=$(echo "$PARSED" | sed -n '3p')
+STOP_HOOK_ACTIVE=$(echo "$PARSED" | sed -n '4p')
 
 # If no cwd, nothing to do
 if [ -z "$CWD" ]; then
@@ -33,7 +35,7 @@ PROJECT=$(basename "$CWD")
 QUEUE_DIR="$HOME/.promptline/queues/$PROJECT"
 QUEUE_FILE="$QUEUE_DIR/$SESSION_ID.json"
 
-export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH
+export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH STOP_HOOK_ACTIVE
 
 # No session file -> nothing to do (SessionStart hook handles registration)
 if [ ! -f "$QUEUE_FILE" ]; then
@@ -95,7 +97,7 @@ session_id = os.environ.get("SESSION_ID", "")
 transcript_path = os.environ.get("TRANSCRIPT_PATH", "")
 
 if not queue_file or not os.path.isfile(queue_file):
-    print("0")
+    print("STOP")
     sys.exit(0)
 
 try:
@@ -137,7 +139,7 @@ if next_prompt is None:
     data["prompts"] = prompts
     data["currentPromptId"] = None
     atomic_write(queue_file, data)
-    print("0")
+    print("STOP")
     sys.exit(0)
 
 # We have a pending prompt -> mark it as running
@@ -150,28 +152,22 @@ atomic_write(queue_file, data)
 # Count remaining pending prompts (excluding the one we just took)
 remaining = sum(1 for p in prompts if p.get("status") == "pending")
 
-DELIM = "__PROMPTLINE_DELIM__"
-print("2")
-print(str(remaining))
-print(DELIM)
-print(next_prompt["text"])
+reason = f"[PromptLine: {remaining} remaining in queue] Execute this prompt:\n\n{next_prompt['text']}"
+decision = {"decision": "block", "reason": reason}
+print("CONTINUE")
+print(json.dumps(decision))
 PYEOF
 )
 
-# --- Parse python output ---
-EXIT_CODE=$(echo "$RESULT" | head -n1)
+# --- Handle python output ---
+ACTION=$(echo "$RESULT" | head -n1)
 
-if [ "$EXIT_CODE" = "2" ]; then
-  REMAINING=$(echo "$RESULT" | sed -n '2p')
-  PROMPT_TEXT=$(echo "$RESULT" | sed '1,/^__PROMPTLINE_DELIM__$/d')
-
-  {
-    echo "===== PromptLine: Executing next prompt (${REMAINING} remaining in queue) ====="
-    echo ""
-    echo "$PROMPT_TEXT"
-  } >&2
-
-  exit 2
+if [ "$ACTION" = "CONTINUE" ]; then
+  # Output JSON decision on stdout so Claude Code continues with next prompt.
+  # Safe from infinite loops: the queue drains (pending -> running -> completed)
+  # and the hook exits 0 without blocking when no prompts remain.
+  echo "$RESULT" | sed '1d'
+  exit 0
 fi
 
 exit 0
