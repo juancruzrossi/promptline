@@ -17,6 +17,7 @@ import {
   addPrompt,
   updatePrompt,
   deletePrompt,
+  clearPrompts,
   reorderPrompts,
 } from './src/backend/queue-store.ts';
 
@@ -281,6 +282,21 @@ async function handleApi(
     }
 
     return jsonError(res, 405, `Method ${method} not allowed`);
+  }
+
+  // DELETE /api/projects/:project/sessions/:sessionId/prompts
+  if (
+    segments[0] === 'projects' && segments[2] === 'sessions' &&
+    segments[4] === 'prompts' && segments.length === 5 && method === 'DELETE'
+  ) {
+    const project = segments[1];
+    const sessionId = segments[3];
+    const session = readSession(QUEUES_DIR, project, sessionId);
+    if (!session) return jsonError(res, 404, 'Session not found');
+
+    const removed = clearPrompts(session);
+    writeSession(QUEUES_DIR, project, session);
+    return json(res, 200, { cleared: removed.length });
   }
 
   // /api/projects/:project/sessions/:sessionId/prompts

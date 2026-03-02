@@ -35,10 +35,10 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragSourceRef = useRef<string | null>(null);
 
-  async function handleDeleteSession(e: React.MouseEvent) {
+  async function handleClearPrompts(e: React.MouseEvent) {
     e.stopPropagation();
     try {
-      await api.deleteSession(project, session.sessionId);
+      await api.clearPrompts(project, session.sessionId);
       onMutate();
     } catch {
       // Silent fail
@@ -148,18 +148,20 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
           ▶
         </span>
       </button>
-      <button
-        type="button"
-        onClick={handleDeleteSession}
-        className={[
-          'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded cursor-pointer',
-          'text-[var(--color-muted)]/40 hover:text-red-400 hover:bg-red-400/10',
-          'transition-all duration-100 focus:outline-none',
-        ].join(' ')}
-        aria-label="Delete session"
-      >
-        <TrashIcon />
-      </button>
+      {session.prompts.length > 0 && (
+        <button
+          type="button"
+          onClick={handleClearPrompts}
+          className={[
+            'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded cursor-pointer',
+            'text-[var(--color-muted)]/40 hover:text-red-400 hover:bg-red-400/10',
+            'transition-all duration-100 focus:outline-none',
+          ].join(' ')}
+          aria-label="Clear prompts"
+        >
+          <TrashIcon />
+        </button>
+      )}
       </div>
 
       {/* Session content */}
