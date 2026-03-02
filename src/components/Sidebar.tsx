@@ -65,7 +65,14 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
           <p className="px-5 py-4 text-xs text-[var(--color-muted)]">No projects found.</p>
         )}
         <ul role="list">
-          {projects.map((project) => {
+          {[...projects].sort((a, b) => {
+            const rank = (p: ProjectView) => {
+              if (getPendingCount(p) > 0) return 0;
+              if (getSessionStatus(p) === 'active') return 1;
+              return 2;
+            };
+            return rank(a) - rank(b);
+          }).map((project) => {
             const status = getSessionStatus(project);
             const pending = getPendingCount(project);
             const isSelected = project.project === selectedProject;
