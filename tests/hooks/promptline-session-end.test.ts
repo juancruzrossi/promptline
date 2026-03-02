@@ -95,4 +95,35 @@ describe('promptline-session-end.sh', () => {
 
     expect(result.exitCode).toBe(0);
   });
+
+  it('closes session even when cwd differs from original project', () => {
+    const originalProject = 'original-proj';
+    const queuesDir = join(fakeHome, '.promptline', 'queues', originalProject);
+    mkdirSync(queuesDir, { recursive: true });
+
+    const sessionFile = join(queuesDir, `${sessionId}.json`);
+    writeFileSync(sessionFile, JSON.stringify({
+      sessionId,
+      project: originalProject,
+      directory: `/tmp/${originalProject}`,
+      sessionName: 'Test',
+      prompts: [],
+      startedAt: '2026-01-01T00:00:00+00:00',
+      lastActivity: '2026-01-01T00:00:00+00:00',
+      currentPromptId: null,
+      completedAt: null,
+      closedAt: null,
+    }, null, 2));
+
+    // Close with different cwd
+    const result = runHook(
+      { session_id: sessionId, cwd: '/tmp/different-dir' },
+      { HOME: fakeHome },
+    );
+
+    expect(result.exitCode).toBe(0);
+
+    const updated = JSON.parse(readFileSync(sessionFile, 'utf-8'));
+    expect(updated.closedAt).toBeTruthy();
+  });
 });

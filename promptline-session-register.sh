@@ -24,11 +24,20 @@ if [ -z "$CWD" ] || [ -z "$SESSION_ID" ]; then
   exit 0
 fi
 
-PROJECT=$(basename "$CWD")
-QUEUE_DIR="$HOME/.promptline/queues/$PROJECT"
-QUEUE_FILE="$QUEUE_DIR/$SESSION_ID.json"
+# Search for existing session across all projects
+QUEUES_BASE="$HOME/.promptline/queues"
+EXISTING=$(find "$QUEUES_BASE" -maxdepth 2 -name "$SESSION_ID.json" -print -quit 2>/dev/null || true)
 
-mkdir -p "$QUEUE_DIR"
+if [ -n "$EXISTING" ]; then
+  QUEUE_FILE="$EXISTING"
+  PROJECT=$(basename "$(dirname "$EXISTING")")
+  QUEUE_DIR="$(dirname "$EXISTING")"
+else
+  PROJECT=$(basename "$CWD")
+  QUEUE_DIR="$QUEUES_BASE/$PROJECT"
+  QUEUE_FILE="$QUEUE_DIR/$SESSION_ID.json"
+  mkdir -p "$QUEUE_DIR"
+fi
 
 export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH
 

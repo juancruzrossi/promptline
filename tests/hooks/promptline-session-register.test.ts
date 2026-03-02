@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createTmpDir, removeTmpDir } from '../backend/helpers.ts';
 
@@ -128,5 +128,32 @@ describe('promptline-session-register.sh', () => {
     );
 
     expect(output).toBe('');
+  });
+
+  it('does not create duplicate when cwd changes to subdirectory', () => {
+    // Register session under original project
+    runHook(
+      HOOK_PATH,
+      { session_id: 'ses-dup', cwd: '/home/user/projects', transcript_path: '' },
+      homeDir,
+    );
+
+    const originalFile = join(homeDir, '.promptline/queues/projects/ses-dup.json');
+    expect(JSON.parse(readFileSync(originalFile, 'utf-8')).project).toBe('projects');
+
+    // Same session, different cwd (Claude cd'd into a subdirectory)
+    runHook(
+      HOOK_PATH,
+      { session_id: 'ses-dup', cwd: '/home/user/projects/promptline', transcript_path: '' },
+      homeDir,
+    );
+
+    // Should NOT create file under "promptline" project
+    const duplicateFile = join(homeDir, '.promptline/queues/promptline/ses-dup.json');
+    expect(existsSync(duplicateFile)).toBe(false);
+
+    // Should update the original file
+    const updated = JSON.parse(readFileSync(originalFile, 'utf-8'));
+    expect(updated.project).toBe('projects');
   });
 });

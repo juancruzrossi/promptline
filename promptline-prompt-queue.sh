@@ -30,17 +30,20 @@ if [ -z "$CWD" ]; then
   exit 0
 fi
 
-# --- Derive project name and session file path ---
-PROJECT=$(basename "$CWD")
-QUEUE_DIR="$HOME/.promptline/queues/$PROJECT"
-QUEUE_FILE="$QUEUE_DIR/$SESSION_ID.json"
+# --- Search for existing session across all projects ---
+QUEUES_BASE="$HOME/.promptline/queues"
+EXISTING=$(find "$QUEUES_BASE" -maxdepth 2 -name "$SESSION_ID.json" -print -quit 2>/dev/null || true)
 
-export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH STOP_HOOK_ACTIVE
-
-# No session file -> nothing to do (SessionStart hook handles registration)
-if [ ! -f "$QUEUE_FILE" ]; then
+if [ -n "$EXISTING" ]; then
+  QUEUE_FILE="$EXISTING"
+  PROJECT=$(basename "$(dirname "$EXISTING")")
+  QUEUE_DIR="$(dirname "$EXISTING")"
+else
+  # No session file -> nothing to do
   exit 0
 fi
+
+export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH STOP_HOOK_ACTIVE
 
 # --- Process queue with python3 ---
 RESULT=$(python3 << 'PYEOF'

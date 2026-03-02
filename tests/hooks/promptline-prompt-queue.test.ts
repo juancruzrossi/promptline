@@ -167,6 +167,35 @@ describe('promptline-prompt-queue.sh', () => {
     expect(output.trim()).toBe('');
   });
 
+  it('finds session even when cwd changes to different directory', () => {
+    const prompt = makePrompt({ id: 'p1', text: 'Cross-dir task', status: 'pending' });
+    const session = {
+      sessionId: 'ses-cross',
+      project: 'original-project',
+      directory: '/projects/original-project',
+      sessionName: null,
+      prompts: [prompt],
+      startedAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      currentPromptId: null,
+      completedAt: null,
+    };
+    // Session registered under "original-project"
+    writeSessionFile(homeDir, 'original-project', 'ses-cross', session);
+
+    // Hook called with different cwd (Claude cd'd)
+    const output = runHook(HOOK_PATH, {
+      session_id: 'ses-cross',
+      cwd: '/projects/other-dir',
+      transcript_path: '',
+      stop_hook_active: false,
+    }, homeDir);
+
+    const decision = JSON.parse(output.trim());
+    expect(decision.decision).toBe('block');
+    expect(decision.reason).toContain('Cross-dir task');
+  });
+
   it('shows remaining queued count in reason', () => {
     const p1 = makePrompt({ id: 'p1', text: 'Task one', status: 'pending' });
     const p2 = makePrompt({ id: 'p2', text: 'Task two', status: 'pending' });

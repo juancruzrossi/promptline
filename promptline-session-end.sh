@@ -21,8 +21,17 @@ if [ -z "$CWD" ] || [ -z "$SESSION_ID" ]; then
   exit 0
 fi
 
-PROJECT=$(basename "$CWD")
-QUEUE_FILE="$HOME/.promptline/queues/$PROJECT/$SESSION_ID.json"
+# Search for existing session across all projects
+QUEUES_BASE="$HOME/.promptline/queues"
+EXISTING=$(find "$QUEUES_BASE" -maxdepth 2 -name "$SESSION_ID.json" -print -quit 2>/dev/null || true)
+
+if [ -n "$EXISTING" ]; then
+  QUEUE_FILE="$EXISTING"
+else
+  # No session to close
+  exit 0
+fi
+
 export QUEUE_FILE
 
 python3 << 'PYEOF'
