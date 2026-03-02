@@ -96,6 +96,76 @@ describe('promptline-session-end.sh', () => {
     expect(result.exitCode).toBe(0);
   });
 
+  it('closes orphaned sessions in the same project', () => {
+    const queuesDir = join(fakeHome, '.promptline', 'queues', project);
+    mkdirSync(queuesDir, { recursive: true });
+
+    // Current session
+    writeFileSync(join(queuesDir, `${sessionId}.json`), JSON.stringify({
+      sessionId, project, directory: `/tmp/${project}`,
+      sessionName: 'Current', prompts: [],
+      startedAt: '2026-01-01T01:00:00+00:00', lastActivity: '2026-01-01T01:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    // Orphaned session (open, no prompts)
+    writeFileSync(join(queuesDir, 'orphan-1.json'), JSON.stringify({
+      sessionId: 'orphan-1', project, directory: `/tmp/${project}`,
+      sessionName: 'Orphan', prompts: [],
+      startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    // Already closed session (should not be touched)
+    writeFileSync(join(queuesDir, 'closed-1.json'), JSON.stringify({
+      sessionId: 'closed-1', project, directory: `/tmp/${project}`,
+      sessionName: 'Closed', prompts: [],
+      startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: '2026-01-01T00:30:00+00:00',
+    }, null, 2));
+
+    const result = runHook(
+      { session_id: sessionId, cwd: `/tmp/${project}` },
+      { HOME: fakeHome },
+    );
+    expect(result.exitCode).toBe(0);
+
+    const current = JSON.parse(readFileSync(join(queuesDir, `${sessionId}.json`), 'utf-8'));
+    const orphan = JSON.parse(readFileSync(join(queuesDir, 'orphan-1.json'), 'utf-8'));
+    const closed = JSON.parse(readFileSync(join(queuesDir, 'closed-1.json'), 'utf-8'));
+
+    expect(current.closedAt).toBeTruthy();
+    expect(orphan.closedAt).toBeTruthy();
+    expect(closed.closedAt).toBe('2026-01-01T00:30:00+00:00'); // unchanged
+  });
+
+  it('does not close orphaned sessions with pending prompts', () => {
+    const queuesDir = join(fakeHome, '.promptline', 'queues', project);
+    mkdirSync(queuesDir, { recursive: true });
+
+    writeFileSync(join(queuesDir, `${sessionId}.json`), JSON.stringify({
+      sessionId, project, directory: `/tmp/${project}`,
+      sessionName: 'Current', prompts: [],
+      startedAt: '2026-01-01T01:00:00+00:00', lastActivity: '2026-01-01T01:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    writeFileSync(join(queuesDir, 'with-prompts.json'), JSON.stringify({
+      sessionId: 'with-prompts', project, directory: `/tmp/${project}`,
+      sessionName: 'Has work', prompts: [{ id: 'p1', text: 'do this', status: 'pending', createdAt: '2026-01-01T00:00:00+00:00', completedAt: null }],
+      startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    runHook(
+      { session_id: sessionId, cwd: `/tmp/${project}` },
+      { HOME: fakeHome },
+    );
+
+    const withPrompts = JSON.parse(readFileSync(join(queuesDir, 'with-prompts.json'), 'utf-8'));
+    expect(withPrompts.closedAt).toBeNull(); // NOT closed — has pending work
+  });
+
   it('closes session even when cwd differs from original project', () => {
     const originalProject = 'original-proj';
     const queuesDir = join(fakeHome, '.promptline', 'queues', originalProject);
