@@ -19,6 +19,7 @@ import {
   deletePrompt,
   clearPrompts,
   reorderPrompts,
+  withSessionLock,
 } from './src/backend/queue-store.ts';
 
 const QUEUES_DIR = join(homedir(), '.promptline', 'queues');
@@ -232,8 +233,6 @@ async function handleApi(
   ) {
     const project = segments[1];
     const sessionId = segments[3];
-    const session = readSession(QUEUES_DIR, project, sessionId);
-    if (!session) return jsonError(res, 404, 'Session not found');
 
     const body = await parseBody(req);
     const order = body.order as string[] | undefined;
@@ -241,11 +240,16 @@ async function handleApi(
       return jsonError(res, 400, 'Field "order" (string[]) is required');
     }
 
-    const error = reorderPrompts(session, order);
-    if (error) return jsonError(res, 400, error);
+    return withSessionLock(QUEUES_DIR, project, sessionId, () => {
+      const session = readSession(QUEUES_DIR, project, sessionId);
+      if (!session) return jsonError(res, 404, 'Session not found');
 
-    writeSession(QUEUES_DIR, project, session);
-    return json(res, 200, session);
+      const error = reorderPrompts(session, order);
+      if (error) return jsonError(res, 400, error);
+
+      writeSession(QUEUES_DIR, project, session);
+      return json(res, 200, session);
+    });
   }
 
   // /api/projects/:project/sessions/:sessionId/prompts/:promptId
@@ -256,8 +260,6 @@ async function handleApi(
     const project = segments[1];
     const sessionId = segments[3];
     const promptId = segments[5];
-    const session = readSession(QUEUES_DIR, project, sessionId);
-    if (!session) return jsonError(res, 404, 'Session not found');
 
     if (method === 'PATCH') {
       const body = await parseBody(req);
@@ -274,19 +276,29 @@ async function handleApi(
         updates.status = body.status as PromptStatus;
       }
 
-      const updated = updatePrompt(session, promptId, updates);
-      if (!updated) return jsonError(res, 404, `Prompt "${promptId}" not found`);
+      return withSessionLock(QUEUES_DIR, project, sessionId, () => {
+        const session = readSession(QUEUES_DIR, project, sessionId);
+        if (!session) return jsonError(res, 404, 'Session not found');
 
-      writeSession(QUEUES_DIR, project, session);
-      return json(res, 200, updated);
+        const updated = updatePrompt(session, promptId, updates);
+        if (!updated) return jsonError(res, 404, `Prompt "${promptId}" not found`);
+
+        writeSession(QUEUES_DIR, project, session);
+        return json(res, 200, updated);
+      });
     }
 
     if (method === 'DELETE') {
-      const removed = deletePrompt(session, promptId);
-      if (!removed) return jsonError(res, 404, `Prompt "${promptId}" not found`);
+      return withSessionLock(QUEUES_DIR, project, sessionId, () => {
+        const session = readSession(QUEUES_DIR, project, sessionId);
+        if (!session) return jsonError(res, 404, 'Session not found');
 
-      writeSession(QUEUES_DIR, project, session);
-      return json(res, 200, removed);
+        const removed = deletePrompt(session, promptId);
+        if (!removed) return jsonError(res, 404, `Prompt "${promptId}" not found`);
+
+        writeSession(QUEUES_DIR, project, session);
+        return json(res, 200, removed);
+      });
     }
 
     return jsonError(res, 405, `Method ${method} not allowed`);
@@ -299,12 +311,15 @@ async function handleApi(
   ) {
     const project = segments[1];
     const sessionId = segments[3];
-    const session = readSession(QUEUES_DIR, project, sessionId);
-    if (!session) return jsonError(res, 404, 'Session not found');
 
-    const removed = clearPrompts(session);
-    writeSession(QUEUES_DIR, project, session);
-    return json(res, 200, { cleared: removed.length });
+    return withSessionLock(QUEUES_DIR, project, sessionId, () => {
+      const session = readSession(QUEUES_DIR, project, sessionId);
+      if (!session) return jsonError(res, 404, 'Session not found');
+
+      const removed = clearPrompts(session);
+      writeSession(QUEUES_DIR, project, session);
+      return json(res, 200, { cleared: removed.length });
+    });
   }
 
   // /api/projects/:project/sessions/:sessionId/prompts
@@ -314,17 +329,20 @@ async function handleApi(
   ) {
     const project = segments[1];
     const sessionId = segments[3];
-    const session = readSession(QUEUES_DIR, project, sessionId);
-    if (!session) return jsonError(res, 404, 'Session not found');
 
     const body = await parseBody(req);
     if (!body.text || typeof body.text !== 'string') {
       return jsonError(res, 400, 'Field "text" (string) is required');
     }
 
-    const prompt = addPrompt(session, uuidv4(), body.text as string);
-    writeSession(QUEUES_DIR, project, session);
-    return json(res, 201, prompt);
+    return withSessionLock(QUEUES_DIR, project, sessionId, () => {
+      const session = readSession(QUEUES_DIR, project, sessionId);
+      if (!session) return jsonError(res, 404, 'Session not found');
+
+      const prompt = addPrompt(session, uuidv4(), body.text as string);
+      writeSession(QUEUES_DIR, project, session);
+      return json(res, 201, prompt);
+    });
   }
 
   return jsonError(res, 404, 'Not found');
