@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, ProjectView, SessionWithStatus } from '../types/queue.ts';
 
 export const SESSION_ACTIVE_TIMEOUT_MS = 60_000;
-export const SESSION_VISIBLE_TIMEOUT_MS = 5 * SESSION_ACTIVE_TIMEOUT_MS;
+export const SESSION_ABANDONED_TIMEOUT_MS = 24 * 60 * 60_000; // 24h safety net
 
 export function ensureProjectDir(queuesDir: string, project: string): void {
   mkdirSync(join(queuesDir, project), { recursive: true });
@@ -52,7 +52,9 @@ export function withComputedStatus(session: SessionQueue): SessionQueue & { stat
 export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
   if (hasPendingWork(session)) return true;
   if (session.closedAt != null) return false;
-  return msSinceLastActivity(session, now) <= SESSION_VISIBLE_TIMEOUT_MS;
+  // Open session — visible until abandoned (24h from start)
+  const msSinceStart = now - new Date(session.startedAt).getTime();
+  return msSinceStart <= SESSION_ABANDONED_TIMEOUT_MS;
 }
 
 export function loadProjectView(queuesDir: string, project: string): ProjectView | null {
