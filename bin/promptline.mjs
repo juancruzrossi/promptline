@@ -4,7 +4,6 @@ import { existsSync, readFileSync, writeFileSync, copyFileSync, chmodSync } from
 import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { spawn, execSync } from 'child_process'
-import { createInterface } from 'readline'
 import { homedir } from 'os'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -59,32 +58,7 @@ const hookFiles = [
   'promptline-session-end.sh',
 ]
 
-const allHooksInstalled = hookFiles.every(f => existsSync(join(hooksDir, f)))
-
-if (!allHooksInstalled) {
-  const answer = await ask('Install PromptLine hooks for Claude Code? (Y/n) ')
-
-  if (answer.toLowerCase() === 'n') {
-    console.log('  Skipped. Run promptline again to install later.')
-    process.exit(0)
-  }
-
-  installHooks()
-} else {
-  const hooksOutdated = hookFiles.some(f => {
-    try {
-      const src = readFileSync(join(pkgDir, f), 'utf-8')
-      const dest = readFileSync(join(hooksDir, f), 'utf-8')
-      return src !== dest
-    } catch {
-      return true
-    }
-  })
-
-  if (hooksOutdated) {
-    installHooks()
-  }
-}
+installHooks()
 
 // Start Vite dev server
 const viteBin = resolve(pkgDir, 'node_modules', '.bin', 'vite')
@@ -126,16 +100,6 @@ process.on('SIGINT', () => {
 })
 
 // --- Helpers ---
-
-function ask(question) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close()
-      resolve(answer.trim() || 'y')
-    })
-  })
-}
 
 function installHooks() {
   // Copy hook scripts
@@ -191,5 +155,4 @@ function installHooks() {
   }
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n')
-  console.log(`\x1b[32m✓\x1b[0m Hooks installed`)
 }
