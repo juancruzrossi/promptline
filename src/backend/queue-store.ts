@@ -52,7 +52,7 @@ export function withComputedStatus(session: SessionQueue): SessionQueue & { stat
 export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
   if (hasPendingWork(session)) return true;
   if (session.closedAt != null) return false;
-  // Open session — visible until abandoned (24h from start)
+  if (!session.sessionName) return false;
   const msSinceStart = now - new Date(session.startedAt).getTime();
   return msSinceStart <= SESSION_ABANDONED_TIMEOUT_MS;
 }
