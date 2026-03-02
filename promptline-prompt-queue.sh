@@ -39,8 +39,10 @@ if [ -n "$EXISTING" ]; then
   PROJECT=$(basename "$(dirname "$EXISTING")")
   QUEUE_DIR="$(dirname "$EXISTING")"
 else
-  # No session file -> nothing to do
-  exit 0
+  PROJECT=$(basename "$CWD")
+  QUEUE_DIR="$QUEUES_BASE/$PROJECT"
+  QUEUE_FILE="$QUEUE_DIR/$SESSION_ID.json"
+  mkdir -p "$QUEUE_DIR"
 fi
 
 export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH STOP_HOOK_ACTIVE
@@ -99,7 +101,27 @@ queue_file = os.environ.get("QUEUE_FILE", "")
 session_id = os.environ.get("SESSION_ID", "")
 transcript_path = os.environ.get("TRANSCRIPT_PATH", "")
 
-if not queue_file or not os.path.isfile(queue_file):
+if not queue_file:
+    print("STOP")
+    sys.exit(0)
+
+if not os.path.isfile(queue_file):
+    cwd = os.environ.get("CWD", "")
+    project = os.environ.get("PROJECT", "")
+    now = datetime.now(timezone.utc).isoformat()
+    data = {
+        "sessionId": session_id,
+        "project": project,
+        "directory": cwd,
+        "sessionName": extract_session_name(transcript_path),
+        "prompts": [],
+        "startedAt": now,
+        "lastActivity": now,
+        "currentPromptId": None,
+        "completedAt": None,
+        "closedAt": None,
+    }
+    atomic_write(queue_file, data)
     print("STOP")
     sys.exit(0)
 
