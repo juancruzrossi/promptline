@@ -5,10 +5,8 @@ import {
   writeSession,
   loadProjectView,
   isSessionVisible,
-  SESSION_TIMEOUT_MS,
-  STALE_SESSION_MS,
+  SESSION_VISIBLE_TIMEOUT_MS,
 } from '../../src/backend/queue-store.ts';
-import { join } from 'node:path';
 
 describe('Status computation', () => {
   let tmpDir: string;
@@ -76,7 +74,7 @@ describe('Status computation', () => {
       const session = makeSession({ project: 'proj' });
       writeSession(tmpDir, 'proj', session);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
       expect(view!.queueStatus).toBe('empty');
     });
@@ -88,7 +86,7 @@ describe('Status computation', () => {
       });
       writeSession(tmpDir, 'proj', session);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
       expect(view!.queueStatus).toBe('active');
     });
@@ -100,7 +98,7 @@ describe('Status computation', () => {
       });
       writeSession(tmpDir, 'proj', session);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view!.queueStatus).toBe('active');
     });
 
@@ -116,7 +114,7 @@ describe('Status computation', () => {
       writeSession(tmpDir, 'proj', s1);
       writeSession(tmpDir, 'proj', s2);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view!.queueStatus).toBe('completed');
     });
 
@@ -132,7 +130,7 @@ describe('Status computation', () => {
       writeSession(tmpDir, 'proj', s1);
       writeSession(tmpDir, 'proj', s2);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view!.queueStatus).toBe('active');
     });
   });
@@ -172,7 +170,7 @@ describe('Status computation', () => {
 
     it('hides stale sessions (>5min) without pending work', () => {
       const session = makeSession({
-        lastActivity: new Date(Date.now() - STALE_SESSION_MS - 1000).toISOString(),
+        lastActivity: new Date(Date.now() - SESSION_VISIBLE_TIMEOUT_MS - 1000).toISOString(),
         closedAt: null,
         prompts: [],
       });
@@ -181,7 +179,7 @@ describe('Status computation', () => {
 
     it('shows stale sessions that have pending prompts', () => {
       const session = makeSession({
-        lastActivity: new Date(Date.now() - STALE_SESSION_MS - 1000).toISOString(),
+        lastActivity: new Date(Date.now() - SESSION_VISIBLE_TIMEOUT_MS - 1000).toISOString(),
         closedAt: null,
         prompts: [makePrompt({ status: 'pending' })],
       });
@@ -222,7 +220,7 @@ describe('Status computation', () => {
       writeSession(tmpDir, 'proj', active);
       writeSession(tmpDir, 'proj', closed);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
       expect(view!.sessions).toHaveLength(1);
       expect(view!.sessions[0].sessionId).toBe(active.sessionId);
@@ -236,7 +234,7 @@ describe('Status computation', () => {
       });
       writeSession(tmpDir, 'proj', closed);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
       expect(view!.sessions).toHaveLength(1);
     });
@@ -249,14 +247,14 @@ describe('Status computation', () => {
       });
       const stale = makeSession({
         project: 'proj',
-        lastActivity: new Date(Date.now() - STALE_SESSION_MS - 1000).toISOString(),
+        lastActivity: new Date(Date.now() - SESSION_VISIBLE_TIMEOUT_MS - 1000).toISOString(),
         closedAt: null,
         prompts: [],
       });
       writeSession(tmpDir, 'proj', active);
       writeSession(tmpDir, 'proj', stale);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
       expect(view!.sessions).toHaveLength(1);
       expect(view!.sessions[0].sessionId).toBe(active.sessionId);
@@ -270,7 +268,7 @@ describe('Status computation', () => {
       });
       writeSession(tmpDir, 'proj', closed);
 
-      const view = loadProjectView('proj', join(tmpDir, 'proj'));
+      const view = loadProjectView(tmpDir, 'proj');
       expect(view).toBeNull();
     });
   });

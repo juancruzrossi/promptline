@@ -1,5 +1,5 @@
 #!/bin/bash
-# prompt-queue.sh — Stop hook for Claude Code.
+# promptline-prompt-queue.sh — Stop hook for Claude Code.
 # Reads from ~/.promptline/queues/{project}/{session_id}.json.
 # If a pending prompt exists, outputs {"decision":"block","reason":"..."}
 # so Claude continues with the next queued prompt.
@@ -65,7 +65,7 @@ def atomic_write(path, obj):
             pass
         raise
 
-def extract_session_name(transcript_path, max_len=80):
+def extract_session_name(transcript_path, max_len=50):
     """Extract first user message from transcript JSONL as session name."""
     if not transcript_path or not os.path.isfile(transcript_path):
         return None
@@ -79,13 +79,13 @@ def extract_session_name(transcript_path, max_len=80):
                         content = msg.get("content", "")
                         if isinstance(content, str) and content.strip():
                             text = content.strip().replace("\n", " ")
-                            return text[:max_len] if len(text) > max_len else text
+                            return text[:max_len] + "..." if len(text) > max_len else text
                         elif isinstance(content, list):
                             for part in content:
                                 if isinstance(part, dict) and part.get("type") == "text":
                                     text = part.get("text", "").strip().replace("\n", " ")
                                     if text:
-                                        return text[:max_len] if len(text) > max_len else text
+                                        return text[:max_len] + "..." if len(text) > max_len else text
                 except (json.JSONDecodeError, KeyError):
                     continue
     except (IOError, OSError):

@@ -8,9 +8,10 @@ PromptLine is a prompt queue system for [Claude Code](https://docs.anthropic.com
 
 It consists of three parts:
 
-1. **A SessionStart hook** (`session-register.sh`) that auto-registers Claude Code sessions when they open, so projects appear in the dashboard immediately.
-2. **A Stop hook** (`prompt-queue.sh`) that reads the next pending prompt from the queue and feeds it to Claude after each response.
-3. **A React dashboard** to manage your prompt queues visually: add, edit, reorder, and delete prompts per project with real-time status updates.
+1. **A SessionStart hook** (`promptline-session-register.sh`) that auto-registers Claude Code sessions when they open, so projects appear in the dashboard immediately.
+2. **A Stop hook** (`promptline-prompt-queue.sh`) that reads the next pending prompt from the queue and feeds it to Claude after each response.
+3. **A SessionEnd hook** (`promptline-session-end.sh`) that marks sessions as closed when Claude Code exits.
+4. **A React dashboard** to manage your prompt queues visually: add, edit, reorder, and delete prompts per project with real-time status updates.
 
 ## How it works
 
@@ -64,12 +65,13 @@ Copy the hook scripts and configure Claude Code:
 
 ```bash
 mkdir -p ~/.claude/hooks
-cp prompt-queue.sh ~/.claude/hooks/prompt-queue.sh
-cp session-register.sh ~/.claude/hooks/session-register.sh
-chmod +x ~/.claude/hooks/prompt-queue.sh ~/.claude/hooks/session-register.sh
+cp promptline-session-register.sh ~/.claude/hooks/promptline-session-register.sh
+cp promptline-prompt-queue.sh ~/.claude/hooks/promptline-prompt-queue.sh
+cp promptline-session-end.sh ~/.claude/hooks/promptline-session-end.sh
+chmod +x ~/.claude/hooks/promptline-*.sh
 ```
 
-Add both hooks to `~/.claude/settings.json`:
+Add all hooks to `~/.claude/settings.json`:
 
 ```json
 {
@@ -79,7 +81,7 @@ Add both hooks to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/session-register.sh"
+            "command": "~/.claude/hooks/promptline-session-register.sh"
           }
         ]
       }
@@ -89,7 +91,17 @@ Add both hooks to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/prompt-queue.sh"
+            "command": "~/.claude/hooks/promptline-prompt-queue.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/promptline-session-end.sh"
           }
         ]
       }
@@ -131,7 +143,7 @@ The dashboard opens automatically in your browser on a random port (3000-10000).
 
 ## Hook behavior
 
-The hook (`prompt-queue.sh`) runs after every Claude Code response via the Stop hook system:
+The hook (`promptline-prompt-queue.sh`) runs after every Claude Code response via the Stop hook system:
 
 | Scenario | What happens | Exit code |
 |----------|-------------|-----------|
@@ -195,8 +207,9 @@ Queue statuses: `active` (has pending/running prompts), `completed` (all done, v
 
 ```
 promptline/
-  session-register.sh      # Claude Code SessionStart hook (auto-registration)
-  prompt-queue.sh          # Claude Code Stop hook (queue processing)
+  promptline-session-register.sh  # Claude Code SessionStart hook (auto-registration)
+  promptline-prompt-queue.sh      # Claude Code Stop hook (queue processing)
+  promptline-session-end.sh       # Claude Code SessionEnd hook (session cleanup)
   vite-plugin-api.ts       # Vite middleware — REST API endpoints
   vite.config.ts           # Vite config (random port, auto-open browser)
   src/
