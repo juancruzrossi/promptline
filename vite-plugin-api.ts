@@ -23,6 +23,10 @@ import {
 
 const QUEUES_DIR = join(homedir(), '.promptline', 'queues');
 
+export function isSafeSegment(s: string): boolean {
+  return s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
+}
+
 function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -159,6 +163,10 @@ async function handleApi(
 ): Promise<void> {
   // Parse URL segments: /api/projects/:project/sessions/:sessionId/prompts/:promptId
   const segments = url.replace(/^\/api\//, '').split('/').map(decodeURIComponent);
+
+  if (!segments.every(isSafeSegment)) {
+    return jsonError(res, 400, 'Invalid path segment');
+  }
 
   // GET /api/projects
   if (segments[0] === 'projects' && segments.length === 1 && method === 'GET') {

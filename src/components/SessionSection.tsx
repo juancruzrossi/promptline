@@ -37,6 +37,7 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
 
   async function handleClearPrompts(e: React.MouseEvent) {
     e.stopPropagation();
+    if (!window.confirm('Clear all prompts?')) return;
     try {
       await api.clearPrompts(project, session.sessionId);
       onMutate();
