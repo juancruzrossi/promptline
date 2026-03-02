@@ -70,6 +70,20 @@ if (!allHooksInstalled) {
   }
 
   installHooks()
+} else {
+  const hooksOutdated = hookFiles.some(f => {
+    try {
+      const src = readFileSync(join(pkgDir, f), 'utf-8')
+      const dest = readFileSync(join(hooksDir, f), 'utf-8')
+      return src !== dest
+    } catch {
+      return true
+    }
+  })
+
+  if (hooksOutdated) {
+    installHooks()
+  }
 }
 
 // Start Vite dev server
