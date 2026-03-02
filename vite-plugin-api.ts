@@ -39,7 +39,6 @@ function writeSession(project: string, session: SessionQueue): void {
 }
 
 const SESSION_TIMEOUT_MS = 60 * 1000; // 1 minute
-const QUEUE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function withComputedStatus(session: SessionQueue): SessionQueue & { status: SessionStatus } {
   const hasRunningPrompt = session.prompts.some(p => p.status === 'running');
@@ -51,7 +50,6 @@ function withComputedStatus(session: SessionQueue): SessionQueue & { status: Ses
 
 function listProjects(): ProjectView[] {
   mkdirSync(QUEUES_DIR, { recursive: true });
-  const now = Date.now();
 
   return readdirSync(QUEUES_DIR, { withFileTypes: true })
     .filter(d => d.isDirectory())
@@ -66,14 +64,7 @@ function listProjects(): ProjectView[] {
             return withComputedStatus(raw);
           } catch { return null; }
         })
-        .filter((s): s is NonNullable<typeof s> => {
-          if (!s) return false;
-          // Hide completed sessions older than 7 days
-          if (s.completedAt) {
-            return now - new Date(s.completedAt).getTime() < QUEUE_RETENTION_MS;
-          }
-          return true;
-        });
+        .filter((s): s is NonNullable<typeof s> => s !== null);
 
       if (sessions.length === 0) return null;
 
@@ -82,9 +73,6 @@ function listProjects(): ProjectView[] {
         s.prompts.length > 0 && s.prompts.every(p => p.status === 'completed')
       );
       const queueStatus: QueueStatus = allCompleted ? 'completed' : hasPrompts ? 'active' : 'empty';
-
-      // Hide projects where ALL sessions are completed (fully done)
-      if (sessions.every(s => s.completedAt !== null)) return null;
 
       return { project, directory: sessions[0].directory, sessions, queueStatus };
     })
