@@ -18,7 +18,7 @@ When working with Claude Code, you often want to queue multiple prompts and walk
 - **API**: Vite plugin middleware (no separate backend)
 - **Storage**: JSON files in `~/.promptline/`
 - **Hook**: Bash script configured as Claude Code Stop hook
-- **Repo**: Private GitHub repo under `juancruzrossi/promptline`
+- **Repo**: GitHub repo `promptline`
 
 ### Storage Structure
 

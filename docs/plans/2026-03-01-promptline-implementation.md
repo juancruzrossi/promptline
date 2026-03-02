@@ -26,7 +26,7 @@
 
 **Step 1: Initialize Vite project**
 
-Run: `npm create vite@latest . -- --template react-ts` (inside `/Users/juanchirossi/Documents/Proyectos/promptline/`)
+Run: `npm create vite@latest . -- --template react-ts` (inside the project root)
 
 **Step 2: Install dependencies**
 
