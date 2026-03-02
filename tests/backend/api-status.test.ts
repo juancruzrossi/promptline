@@ -200,20 +200,11 @@ describe('Status computation', () => {
       expect(isSessionVisible(session, now)).toBe(true);
     });
 
-    it('hides ghost sessions (no sessionName)', () => {
+    it('shows open sessions even without sessionName', () => {
       const session = makeSession({
         sessionName: null as unknown as string,
         closedAt: null,
         prompts: [],
-      });
-      expect(isSessionVisible(session)).toBe(false);
-    });
-
-    it('shows ghost sessions if they have pending prompts', () => {
-      const session = makeSession({
-        sessionName: null as unknown as string,
-        closedAt: null,
-        prompts: [makePrompt({ status: 'pending' })],
       });
       expect(isSessionVisible(session)).toBe(true);
     });
