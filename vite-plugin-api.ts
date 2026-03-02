@@ -1,93 +1,26 @@
 import type { Plugin, Connect } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, rmSync, watch } from 'node:fs';
+import { mkdirSync, watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
-import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, ProjectView } from './src/types/queue.ts';
+import type { PromptStatus } from './src/types/queue.ts';
+import {
+  listProjects,
+  getProject,
+  deleteProject,
+  readSession,
+  writeSession,
+  withComputedStatus,
+  deleteSession,
+  addPrompt,
+  updatePrompt,
+  deletePrompt,
+  reorderPrompts,
+} from './src/backend/queue-store.ts';
 
 const QUEUES_DIR = join(homedir(), '.promptline', 'queues');
-
-function ensureProjectDir(project: string): void {
-  mkdirSync(join(QUEUES_DIR, project), { recursive: true });
-}
-
-function sessionPath(project: string, sessionId: string): string {
-  return join(QUEUES_DIR, project, `${sessionId}.json`);
-}
-
-function readSession(project: string, sessionId: string): SessionQueue | null {
-  try {
-    return JSON.parse(readFileSync(sessionPath(project, sessionId), 'utf-8')) as SessionQueue;
-  } catch {
-    return null;
-  }
-}
-
-function writeSession(project: string, session: SessionQueue): void {
-  ensureProjectDir(project);
-  const filePath = sessionPath(project, session.sessionId);
-  const tmpPath = `${filePath}.tmp.${process.pid}`;
-  try {
-    writeFileSync(tmpPath, JSON.stringify(session, null, 2));
-    renameSync(tmpPath, filePath);
-  } catch (err) {
-    try { unlinkSync(tmpPath); } catch {}
-    throw err;
-  }
-}
-
-const SESSION_TIMEOUT_MS = 60 * 1000; // 1 minute
-
-function withComputedStatus(session: SessionQueue): SessionQueue & { status: SessionStatus } {
-  const hasRunningPrompt = session.prompts.some(p => p.status === 'running');
-  const lastActivity = new Date(session.lastActivity).getTime();
-  const isStale = Date.now() - lastActivity > SESSION_TIMEOUT_MS;
-  const status: SessionStatus = (hasRunningPrompt || !isStale) ? 'active' : 'idle';
-  return { ...session, status };
-}
-
-function loadProjectView(project: string, dirPath: string): ProjectView | null {
-  let files: string[];
-  try {
-    files = readdirSync(dirPath).filter(f => f.endsWith('.json'));
-  } catch {
-    return null;
-  }
-
-  const sessions = files
-    .map(f => {
-      try {
-        const raw = JSON.parse(readFileSync(join(dirPath, f), 'utf-8')) as SessionQueue;
-        return withComputedStatus(raw);
-      } catch { return null; }
-    })
-    .filter((s): s is NonNullable<typeof s> => s !== null);
-
-  if (sessions.length === 0) return null;
-
-  const hasPrompts = sessions.some(s => s.prompts.length > 0);
-  const allCompleted = hasPrompts && sessions.every(s =>
-    s.prompts.length > 0 && s.prompts.every(p => p.status === 'completed')
-  );
-  const queueStatus: QueueStatus = allCompleted ? 'completed' : hasPrompts ? 'active' : 'empty';
-
-  return { project, directory: sessions[0].directory, sessions, queueStatus };
-}
-
-function listProjects(): ProjectView[] {
-  mkdirSync(QUEUES_DIR, { recursive: true });
-
-  return readdirSync(QUEUES_DIR, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(dir => loadProjectView(dir.name, join(QUEUES_DIR, dir.name)))
-    .filter((p): p is NonNullable<typeof p> => p !== null);
-}
-
-function getProject(project: string): ProjectView | null {
-  return loadProjectView(project, join(QUEUES_DIR, project));
-}
 
 function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -122,7 +55,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 200;
 
 function broadcastProjects(): void {
-  const data = JSON.stringify(listProjects());
+  const data = JSON.stringify(listProjects(QUEUES_DIR));
   const message = `event: projects\ndata: ${data}\n\n`;
   for (const client of sseClients) {
     client.write(message);
@@ -164,7 +97,7 @@ function handleSSE(_req: IncomingMessage, res: ServerResponse): void {
   });
 
   // Send initial state
-  const data = JSON.stringify(listProjects());
+  const data = JSON.stringify(listProjects(QUEUES_DIR));
   res.write(`event: projects\ndata: ${data}\n\n`);
 
   const heartbeat = setInterval(() => {
@@ -228,7 +161,7 @@ async function handleApi(
 
   // GET /api/projects
   if (segments[0] === 'projects' && segments.length === 1 && method === 'GET') {
-    return json(res, 200, listProjects());
+    return json(res, 200, listProjects(QUEUES_DIR));
   }
 
   // /api/projects/:project
@@ -236,15 +169,14 @@ async function handleApi(
     const project = segments[1];
 
     if (method === 'GET') {
-      const pv = getProject(project);
+      const pv = getProject(QUEUES_DIR, project);
       if (!pv) return jsonError(res, 404, `Project "${project}" not found`);
       return json(res, 200, pv);
     }
 
     if (method === 'DELETE') {
-      const dirPath = join(QUEUES_DIR, project);
       try {
-        rmSync(dirPath, { recursive: true });
+        deleteProject(QUEUES_DIR, project);
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
           return jsonError(res, 404, `Project "${project}" not found`);
@@ -263,15 +195,14 @@ async function handleApi(
     const sessionId = segments[3];
 
     if (method === 'GET') {
-      const session = readSession(project, sessionId);
+      const session = readSession(QUEUES_DIR, project, sessionId);
       if (!session) return jsonError(res, 404, 'Session not found');
       return json(res, 200, withComputedStatus(session));
     }
 
     if (method === 'DELETE') {
-      const filePath = sessionPath(project, sessionId);
       try {
-        unlinkSync(filePath);
+        deleteSession(QUEUES_DIR, project, sessionId);
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
           return jsonError(res, 404, 'Session not found');
@@ -292,7 +223,7 @@ async function handleApi(
   ) {
     const project = segments[1];
     const sessionId = segments[3];
-    const session = readSession(project, sessionId);
+    const session = readSession(QUEUES_DIR, project, sessionId);
     if (!session) return jsonError(res, 404, 'Session not found');
 
     const body = await parseBody(req);
@@ -301,26 +232,10 @@ async function handleApi(
       return jsonError(res, 400, 'Field "order" (string[]) is required');
     }
 
-    const promptMap = new Map(session.prompts.map(p => [p.id, p]));
-    for (const id of order) {
-      if (!promptMap.has(id)) {
-        return jsonError(res, 400, `Prompt "${id}" not found`);
-      }
-    }
+    const error = reorderPrompts(session, order);
+    if (error) return jsonError(res, 400, error);
 
-    const reordered: Prompt[] = [];
-    for (const id of order) {
-      reordered.push(promptMap.get(id)!);
-    }
-    const orderSet = new Set(order);
-    for (const p of session.prompts) {
-      if (!orderSet.has(p.id)) {
-        reordered.push(p);
-      }
-    }
-
-    session.prompts = reordered;
-    writeSession(project, session);
+    writeSession(QUEUES_DIR, project, session);
     return json(res, 200, session);
   }
 
@@ -332,37 +247,36 @@ async function handleApi(
     const project = segments[1];
     const sessionId = segments[3];
     const promptId = segments[5];
-    const session = readSession(project, sessionId);
+    const session = readSession(QUEUES_DIR, project, sessionId);
     if (!session) return jsonError(res, 404, 'Session not found');
 
     if (method === 'PATCH') {
-      const idx = session.prompts.findIndex(p => p.id === promptId);
-      if (idx === -1) return jsonError(res, 404, `Prompt "${promptId}" not found`);
-
       const body = await parseBody(req);
+      const updates: { text?: string; status?: PromptStatus } = {};
+
       if (body.text !== undefined) {
-        session.prompts[idx].text = body.text as string;
+        updates.text = body.text as string;
       }
       if (body.status !== undefined) {
         const validStatuses: PromptStatus[] = ['pending', 'running', 'completed'];
         if (!validStatuses.includes(body.status as PromptStatus)) {
           return jsonError(res, 400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`);
         }
-        session.prompts[idx].status = body.status as PromptStatus;
-        if (body.status === 'completed') {
-          session.prompts[idx].completedAt = new Date().toISOString();
-        }
+        updates.status = body.status as PromptStatus;
       }
-      writeSession(project, session);
-      return json(res, 200, session.prompts[idx]);
+
+      const updated = updatePrompt(session, promptId, updates);
+      if (!updated) return jsonError(res, 404, `Prompt "${promptId}" not found`);
+
+      writeSession(QUEUES_DIR, project, session);
+      return json(res, 200, updated);
     }
 
     if (method === 'DELETE') {
-      const idx = session.prompts.findIndex(p => p.id === promptId);
-      if (idx === -1) return jsonError(res, 404, `Prompt "${promptId}" not found`);
+      const removed = deletePrompt(session, promptId);
+      if (!removed) return jsonError(res, 404, `Prompt "${promptId}" not found`);
 
-      const removed = session.prompts.splice(idx, 1)[0];
-      writeSession(project, session);
+      writeSession(QUEUES_DIR, project, session);
       return json(res, 200, removed);
     }
 
@@ -376,7 +290,7 @@ async function handleApi(
   ) {
     const project = segments[1];
     const sessionId = segments[3];
-    const session = readSession(project, sessionId);
+    const session = readSession(QUEUES_DIR, project, sessionId);
     if (!session) return jsonError(res, 404, 'Session not found');
 
     const body = await parseBody(req);
@@ -384,16 +298,8 @@ async function handleApi(
       return jsonError(res, 400, 'Field "text" (string) is required');
     }
 
-    const prompt: Prompt = {
-      id: uuidv4(),
-      text: body.text as string,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      completedAt: null,
-    };
-
-    session.prompts.push(prompt);
-    writeSession(project, session);
+    const prompt = addPrompt(session, uuidv4(), body.text as string);
+    writeSession(QUEUES_DIR, project, session);
     return json(res, 201, prompt);
   }
 
