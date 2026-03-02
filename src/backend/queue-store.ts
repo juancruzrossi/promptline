@@ -150,6 +150,11 @@ export function deletePrompt(session: SessionQueue, promptId: string): Prompt | 
   return session.prompts.splice(idx, 1)[0];
 }
 
+export function clearPrompts(session: SessionQueue): Prompt[] {
+  const removed = session.prompts.splice(0);
+  return removed;
+}
+
 export function reorderPrompts(session: SessionQueue, order: string[]): string | null {
   const promptMap = new Map(session.prompts.map(p => [p.id, p]));
   for (const id of order) {

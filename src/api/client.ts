@@ -30,6 +30,9 @@ export const api = {
   deleteSession: (project: string, sessionId: string) =>
     request<{ deleted: string }>(sessionUrl(project, sessionId), { method: 'DELETE' }),
 
+  clearPrompts: (project: string, sessionId: string) =>
+    request<{ cleared: number }>(`${sessionUrl(project, sessionId)}/prompts`, { method: 'DELETE' }),
+
   addPrompt: (project: string, sessionId: string, text: string) =>
     request<Prompt>(`${sessionUrl(project, sessionId)}/prompts`, {
       method: 'POST',
