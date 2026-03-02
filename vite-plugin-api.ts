@@ -83,8 +83,8 @@ function listProjects(): ProjectView[] {
       );
       const queueStatus: QueueStatus = allCompleted ? 'completed' : hasPrompts ? 'active' : 'empty';
 
-      // Hide empty projects with no active sessions
-      if (queueStatus === 'empty' && !sessions.some(s => s.status === 'active')) return null;
+      // Hide projects where ALL sessions are completed (fully done)
+      if (sessions.every(s => s.completedAt !== null)) return null;
 
       return { project, directory: sessions[0].directory, sessions, queueStatus };
     })
