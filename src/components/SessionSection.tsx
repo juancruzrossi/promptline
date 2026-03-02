@@ -35,7 +35,7 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
   const dragSourceRef = useRef<string | null>(null);
 
   const activePrompts = session.prompts.filter(p => p.status !== 'completed');
-  const completedPrompts = session.prompts.filter(p => p.status === 'completed');
+  const completedPrompts = session.prompts.filter(p => p.status === 'completed').reverse();
   const pendingCount = session.prompts.filter(p => p.status === 'pending').length;
 
   const displayName = session.sessionName || '(session)';
