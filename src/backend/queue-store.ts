@@ -1,9 +1,48 @@
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, rmSync, openSync, closeSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, ProjectView, SessionWithStatus } from '../types/queue.ts';
 
 export const SESSION_ACTIVE_TIMEOUT_MS = 60_000;
 export const SESSION_ABANDONED_TIMEOUT_MS = 24 * 60 * 60_000; // 24h safety net
+const LOCK_STALE_MS = 10_000;
+
+function acquireLockSync(lockPath: string): void {
+  for (let i = 0; i < 100; i++) {
+    try {
+      const fd = openSync(lockPath, 'wx');
+      closeSync(fd);
+      return;
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      try {
+        if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+          unlinkSync(lockPath);
+          continue;
+        }
+      } catch { continue; }
+      const end = Date.now() + 10;
+      while (Date.now() < end) { /* spin */ }
+    }
+  }
+  try { unlinkSync(lockPath); } catch { /* ignore */ }
+}
+
+function releaseLockSync(lockPath: string): void {
+  try { unlinkSync(lockPath); } catch { /* ignore */ }
+}
+
+export function withSessionLock<T>(
+  queuesDir: string, project: string, sessionId: string,
+  fn: () => T,
+): T {
+  const lockPath = sessionPath(queuesDir, project, sessionId) + '.lock';
+  acquireLockSync(lockPath);
+  try {
+    return fn();
+  } finally {
+    releaseLockSync(lockPath);
+  }
+}
 
 export function ensureProjectDir(queuesDir: string, project: string): void {
   mkdirSync(join(queuesDir, project), { recursive: true });

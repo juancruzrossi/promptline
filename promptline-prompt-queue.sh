@@ -52,8 +52,39 @@ RESULT=$(python3 << 'PYEOF'
 import json
 import sys
 import os
+import time
 import tempfile
 from datetime import datetime, timezone
+
+
+def acquire_lock(lock_path, timeout=3):
+    deadline = time.time() + timeout
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            os.close(fd)
+            return
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(lock_path) > 10:
+                    os.unlink(lock_path)
+                    continue
+            except OSError:
+                continue
+            if time.time() >= deadline:
+                try:
+                    os.unlink(lock_path)
+                except OSError:
+                    pass
+                return
+            time.sleep(0.01)
+
+
+def release_lock(lock_path):
+    try:
+        os.unlink(lock_path)
+    except OSError:
+        pass
 
 def atomic_write(path, obj):
     """Write JSON atomically: temp file + rename to prevent corruption."""
@@ -105,82 +136,87 @@ if not queue_file:
     print("STOP")
     sys.exit(0)
 
-if not os.path.isfile(queue_file):
-    cwd = os.environ.get("CWD", "")
-    project = os.environ.get("PROJECT", "")
-    now = datetime.now(timezone.utc).isoformat()
-    data = {
-        "sessionId": session_id,
-        "project": project,
-        "directory": cwd,
-        "sessionName": extract_session_name(transcript_path),
-        "prompts": [],
-        "startedAt": now,
-        "lastActivity": now,
-        "currentPromptId": None,
-        "completedAt": None,
-        "closedAt": None,
-    }
-    atomic_write(queue_file, data)
-    print("STOP")
-    sys.exit(0)
-
+lock_path = queue_file + ".lock"
+acquire_lock(lock_path)
 try:
-    with open(queue_file, "r") as f:
-        data = json.load(f)
-except (json.JSONDecodeError, IOError):
-    print("0")
-    sys.exit(0)
+    if not os.path.isfile(queue_file):
+        cwd = os.environ.get("CWD", "")
+        project = os.environ.get("PROJECT", "")
+        now = datetime.now(timezone.utc).isoformat()
+        data = {
+            "sessionId": session_id,
+            "project": project,
+            "directory": cwd,
+            "sessionName": extract_session_name(transcript_path),
+            "prompts": [],
+            "startedAt": now,
+            "lastActivity": now,
+            "currentPromptId": None,
+            "completedAt": None,
+            "closedAt": None,
+        }
+        atomic_write(queue_file, data)
+        print("STOP")
+        sys.exit(0)
 
-prompts = data.get("prompts", [])
-now = datetime.now(timezone.utc).isoformat()
+    try:
+        with open(queue_file, "r") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        print("0")
+        sys.exit(0)
 
-# Step 1: Mark any currently "running" prompts as "completed"
-for p in prompts:
-    if p.get("status") == "running":
-        p["status"] = "completed"
-        p["completedAt"] = now
+    prompts = data.get("prompts", [])
+    now = datetime.now(timezone.utc).isoformat()
 
-# Step 1b: Track completedAt when all prompts are done
-all_done = all(p.get("status") == "completed" for p in prompts) and len(prompts) > 0
-if all_done and not data.get("completedAt"):
-    data["completedAt"] = now
+    # Step 1: Mark any currently "running" prompts as "completed"
+    for p in prompts:
+        if p.get("status") == "running":
+            p["status"] = "completed"
+            p["completedAt"] = now
 
-# Step 1c: Update sessionName if still null
-if not data.get("sessionName"):
-    data["sessionName"] = extract_session_name(transcript_path)
+    # Step 1b: Track completedAt when all prompts are done
+    all_done = all(p.get("status") == "completed" for p in prompts) and len(prompts) > 0
+    if all_done and not data.get("completedAt"):
+        data["completedAt"] = now
 
-# Step 2: Find the first "pending" prompt
-next_prompt = None
-for p in prompts:
-    if p.get("status") == "pending":
-        next_prompt = p
-        break
+    # Step 1c: Update sessionName if still null
+    if not data.get("sessionName"):
+        data["sessionName"] = extract_session_name(transcript_path)
 
-# Step 3: Update session tracking
-data["lastActivity"] = now
+    # Step 2: Find the first "pending" prompt
+    next_prompt = None
+    for p in prompts:
+        if p.get("status") == "pending":
+            next_prompt = p
+            break
 
-if next_prompt is None:
+    # Step 3: Update session tracking
+    data["lastActivity"] = now
+
+    if next_prompt is None:
+        data["prompts"] = prompts
+        data["currentPromptId"] = None
+        atomic_write(queue_file, data)
+        print("STOP")
+        sys.exit(0)
+
+    # We have a pending prompt -> mark it as running
+    next_prompt["status"] = "running"
+    data["currentPromptId"] = next_prompt["id"]
     data["prompts"] = prompts
-    data["currentPromptId"] = None
+
     atomic_write(queue_file, data)
-    print("STOP")
-    sys.exit(0)
 
-# We have a pending prompt -> mark it as running
-next_prompt["status"] = "running"
-data["currentPromptId"] = next_prompt["id"]
-data["prompts"] = prompts
+    # Count remaining pending prompts (excluding the one we just took)
+    remaining = sum(1 for p in prompts if p.get("status") == "pending")
 
-atomic_write(queue_file, data)
-
-# Count remaining pending prompts (excluding the one we just took)
-remaining = sum(1 for p in prompts if p.get("status") == "pending")
-
-reason = f"PromptLine ({remaining} queued)\n\n{next_prompt['text']}"
-decision = {"decision": "block", "reason": reason}
-print("CONTINUE")
-print(json.dumps(decision))
+    reason = f"PromptLine ({remaining} queued)\n\n{next_prompt['text']}"
+    decision = {"decision": "block", "reason": reason}
+    print("CONTINUE")
+    print(json.dumps(decision))
+finally:
+    release_lock(lock_path)
 PYEOF
 )
 
