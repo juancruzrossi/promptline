@@ -1,35 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo } from 'react';
 import type { ProjectView } from '../types/queue';
-import { api } from '../api/client';
 
-export function useProject(project: string | null, pollIntervalMs = 2000) {
-  const [projectView, setProjectView] = useState<ProjectView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface UseProjectOptions {
+  project: string | null;
+  projects: ProjectView[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+}
 
-  const refresh = useCallback(async () => {
-    if (!project) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const data = await api.getProject(project);
-      setProjectView(data);
-      setError(null);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setLoading(false);
-    }
-  }, [project]);
-
-  useEffect(() => {
-    setProjectView(null);
-    setLoading(true);
-    refresh();
-    const interval = setInterval(refresh, pollIntervalMs);
-    return () => clearInterval(interval);
-  }, [refresh, pollIntervalMs]);
+export function useProject({ project, projects, loading, error, refresh }: UseProjectOptions) {
+  const projectView = useMemo(() => {
+    if (!project) return null;
+    return projects.find(p => p.project === project) ?? null;
+  }, [project, projects]);
 
   return { projectView, loading, error, refresh };
 }

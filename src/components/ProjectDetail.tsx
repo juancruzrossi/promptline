@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useProject } from '../hooks/useQueue';
 import { api } from '../api/client';
-import type { SessionWithStatus } from '../types/queue';
+import type { ProjectView, SessionWithStatus } from '../types/queue';
 import { SessionSection } from './SessionSection';
 
 interface ProjectDetailProps {
   project: string;
+  projects: ProjectView[];
+  refresh: () => Promise<void>;
   onProjectDeleted: () => void;
 }
 
@@ -14,8 +16,8 @@ function isVisible(session: SessionWithStatus): boolean {
   return session.prompts.some(p => p.status === 'pending' || p.status === 'running');
 }
 
-export function ProjectDetail({ project, onProjectDeleted }: ProjectDetailProps) {
-  const { projectView, loading, error, refresh } = useProject(project);
+export function ProjectDetail({ project, projects, refresh, onProjectDeleted }: ProjectDetailProps) {
+  const { projectView, loading, error } = useProject({ project, projects, loading: false, error: null, refresh });
   const [historyOpen, setHistoryOpen] = useState(false);
 
   async function handleDeleteProject() {
