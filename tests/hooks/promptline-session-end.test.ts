@@ -166,6 +166,57 @@ describe('promptline-session-end.sh', () => {
     expect(withPrompts.closedAt).toBeNull(); // NOT closed — has pending work
   });
 
+  it('closes orphaned sessions across all projects, not just the current one', () => {
+    // Current project
+    const queuesDir = join(fakeHome, '.promptline', 'queues', project);
+    mkdirSync(queuesDir, { recursive: true });
+
+    writeFileSync(join(queuesDir, `${sessionId}.json`), JSON.stringify({
+      sessionId, project, directory: `/tmp/${project}`,
+      sessionName: 'Current', prompts: [],
+      startedAt: '2026-01-01T01:00:00+00:00', lastActivity: '2026-01-01T01:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    // Orphan in a DIFFERENT project
+    const otherProject = 'other-project';
+    const otherDir = join(fakeHome, '.promptline', 'queues', otherProject);
+    mkdirSync(otherDir, { recursive: true });
+
+    writeFileSync(join(otherDir, 'orphan-other.json'), JSON.stringify({
+      sessionId: 'orphan-other', project: otherProject, directory: `/tmp/${otherProject}`,
+      sessionName: null, prompts: [],
+      startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    // Session with pending work in other project (should NOT be closed)
+    writeFileSync(join(otherDir, 'active-other.json'), JSON.stringify({
+      sessionId: 'active-other', project: otherProject, directory: `/tmp/${otherProject}`,
+      sessionName: 'Working', prompts: [{ id: 'p1', text: 'do it', status: 'pending', createdAt: '2026-01-01T00:00:00+00:00', completedAt: null }],
+      startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    const result = runHook(
+      { session_id: sessionId, cwd: `/tmp/${project}` },
+      { HOME: fakeHome },
+    );
+    expect(result.exitCode).toBe(0);
+
+    // Current session closed
+    const current = JSON.parse(readFileSync(join(queuesDir, `${sessionId}.json`), 'utf-8'));
+    expect(current.closedAt).toBeTruthy();
+
+    // Orphan in OTHER project also closed
+    const orphanOther = JSON.parse(readFileSync(join(otherDir, 'orphan-other.json'), 'utf-8'));
+    expect(orphanOther.closedAt).toBeTruthy();
+
+    // Active session in OTHER project NOT closed
+    const activeOther = JSON.parse(readFileSync(join(otherDir, 'active-other.json'), 'utf-8'));
+    expect(activeOther.closedAt).toBeNull();
+  });
+
   it('closes session even when cwd differs from original project', () => {
     const originalProject = 'original-proj';
     const queuesDir = join(fakeHome, '.promptline', 'queues', originalProject);

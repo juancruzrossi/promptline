@@ -33,7 +33,7 @@ else
 fi
 
 QUEUE_DIR="$(dirname "$QUEUE_FILE")"
-export QUEUE_FILE QUEUE_DIR SESSION_ID
+export QUEUE_FILE QUEUE_DIR SESSION_ID QUEUES_BASE
 
 python3 << 'PYEOF'
 import json, os, glob, tempfile
@@ -68,21 +68,24 @@ try:
 except (json.JSONDecodeError, IOError, OSError):
     pass
 
-# Close orphaned sessions in the same project
-for path in glob.glob(os.path.join(queue_dir, "*.json")):
-    if os.path.basename(path) == f"{session_id}.json":
+queues_base = os.environ["QUEUES_BASE"]
+for project_dir in glob.glob(os.path.join(queues_base, "*")):
+    if not os.path.isdir(project_dir):
         continue
-    try:
-        with open(path, "r") as f:
-            data = json.load(f)
-        if data.get("closedAt") is not None:
+    for path in glob.glob(os.path.join(project_dir, "*.json")):
+        if os.path.basename(path) == f"{session_id}.json":
             continue
-        has_pending = any(p.get("status") in ("pending", "running") for p in data.get("prompts", []))
-        if has_pending:
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            if data.get("closedAt") is not None:
+                continue
+            has_pending = any(p.get("status") in ("pending", "running") for p in data.get("prompts", []))
+            if has_pending:
+                continue
+            close_session(path, now)
+        except (json.JSONDecodeError, IOError, OSError):
             continue
-        close_session(path, now)
-    except (json.JSONDecodeError, IOError, OSError):
-        continue
 
 PYEOF
 
