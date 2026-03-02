@@ -104,6 +104,7 @@ else:
         "lastActivity": now,
         "currentPromptId": None,
         "completedAt": None,
+        "closedAt": None,
     }
     atomic_write(queue_file, data)
 

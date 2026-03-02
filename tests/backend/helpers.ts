@@ -25,6 +25,7 @@ export function makeSession(overrides: Partial<SessionQueue> = {}): SessionQueue
     lastActivity: new Date().toISOString(),
     currentPromptId: null,
     completedAt: null,
+    closedAt: null,
     ...overrides,
   };
 }

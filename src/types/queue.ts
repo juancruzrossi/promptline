@@ -20,6 +20,7 @@ export interface SessionQueue {
   lastActivity: string;
   currentPromptId: string | null;
   completedAt: string | null;
+  closedAt: string | null;
 }
 
 export type SessionWithStatus = SessionQueue & { status: SessionStatus };

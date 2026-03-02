@@ -1,8 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, ProjectView } from '../types/queue.ts';
+import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, ProjectView, SessionWithStatus } from '../types/queue.ts';
 
 export const SESSION_TIMEOUT_MS = 60_000;
+export const STALE_SESSION_MS = 5 * 60 * 1000;
 
 export function ensureProjectDir(queuesDir: string, project: string): void {
   mkdirSync(join(queuesDir, project), { recursive: true });
@@ -41,6 +42,22 @@ export function withComputedStatus(session: SessionQueue): SessionQueue & { stat
   return { ...session, status };
 }
 
+function hasPendingWork(session: SessionQueue): boolean {
+  return session.prompts.some(p => p.status === 'pending' || p.status === 'running');
+}
+
+export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
+  if (hasPendingWork(session)) return true;
+
+  const isClosed = session.closedAt != null;
+  const lastActivity = new Date(session.lastActivity).getTime();
+  const isStale = now - lastActivity > STALE_SESSION_MS;
+
+  if (isClosed || isStale) return false;
+
+  return true;
+}
+
 export function loadProjectView(project: string, dirPath: string): ProjectView | null {
   let files: string[];
   try {
@@ -49,6 +66,8 @@ export function loadProjectView(project: string, dirPath: string): ProjectView |
     return null;
   }
 
+  const now = Date.now();
+
   const sessions = files
     .map(f => {
       try {
@@ -56,7 +75,8 @@ export function loadProjectView(project: string, dirPath: string): ProjectView |
         return withComputedStatus(raw);
       } catch { return null; }
     })
-    .filter((s): s is NonNullable<typeof s> => s !== null);
+    .filter((s): s is NonNullable<typeof s> => s !== null)
+    .filter((s: SessionWithStatus) => isSessionVisible(s, now));
 
   if (sessions.length === 0) return null;
 
