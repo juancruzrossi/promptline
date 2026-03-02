@@ -65,7 +65,7 @@ export function AddPromptForm({ project, sessionId, onAdded }: AddPromptFormProp
         onClick={() => setExpanded(true)}
         className={[
           'w-full text-left text-xs text-[var(--color-muted)] px-4 py-2.5 cursor-pointer',
-          'border border-dashed border-[var(--color-border)] rounded-lg',
+          'border border-dashed border-[var(--color-active)]/40 rounded-lg',
           'hover:border-[var(--color-active)]/40 hover:text-[var(--color-active)] hover:bg-[var(--color-active)]/5',
           'transition-all duration-150 focus:outline-none focus:ring-1 focus:ring-[var(--color-active)]/30',
         ].join(' ')}
