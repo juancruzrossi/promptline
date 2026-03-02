@@ -152,7 +152,7 @@ atomic_write(queue_file, data)
 # Count remaining pending prompts (excluding the one we just took)
 remaining = sum(1 for p in prompts if p.get("status") == "pending")
 
-reason = f"PromptLine ({remaining} queued) — {next_prompt['text']}"
+reason = f"PromptLine ({remaining} queued)\n\n{next_prompt['text']}"
 decision = {"decision": "block", "reason": reason}
 print("CONTINUE")
 print(json.dumps(decision))
