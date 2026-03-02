@@ -34,6 +34,16 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragSourceRef = useRef<string | null>(null);
 
+  async function handleDeleteSession(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await api.deleteSession(project, session.sessionId);
+      onMutate();
+    } catch {
+      // Silent fail
+    }
+  }
+
   const activePrompts = session.prompts.filter(p => p.status !== 'completed');
   const completedPrompts = session.prompts.filter(p => p.status === 'completed').reverse();
   const pendingCount = session.prompts.filter(p => p.status === 'pending').length;
@@ -107,11 +117,12 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
   return (
     <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-white/[0.02]">
       {/* Session header */}
+      <div className="relative group">
       <button
         type="button"
         onClick={() => setExpanded(v => !v)}
         className={[
-          'w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer',
+          'w-full flex items-center gap-3 pl-4 pr-10 py-3 text-left cursor-pointer',
           'hover:bg-white/5 transition-colors duration-150 focus:outline-none',
         ].join(' ')}
         aria-expanded={expanded}
@@ -136,6 +147,22 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
           ▶
         </span>
       </button>
+      <button
+        type="button"
+        onClick={handleDeleteSession}
+        className={[
+          'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded cursor-pointer',
+          'text-[var(--color-muted)]/40 hover:text-red-400 hover:bg-red-400/10',
+          'transition-all duration-100 focus:outline-none',
+        ].join(' ')}
+        aria-label="Delete session"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </svg>
+      </button>
+      </div>
 
       {/* Session content */}
       {expanded && (
