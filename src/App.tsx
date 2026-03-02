@@ -37,9 +37,17 @@ function App() {
           )}
 
           {!loading && !error && !selectedProject && (
-            <div className="flex flex-col items-center justify-center h-full gap-2 select-none">
-              <span className="text-2xl text-[var(--color-border)]">&#x25A1;</span>
-              <p className="text-sm text-[var(--color-muted)]">Select a project</p>
+            <div className="flex flex-col items-center justify-center h-full gap-3 select-none opacity-40">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-muted)]">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              <div className="text-center">
+                <p className="text-sm text-[var(--color-muted)] font-medium">No project selected</p>
+                <p className="text-xs text-[var(--color-muted)] mt-1">Pick one from the sidebar to view its prompt queue</p>
+              </div>
             </div>
           )}
 
