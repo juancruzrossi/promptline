@@ -48,39 +48,7 @@ function withComputedStatus(session: SessionQueue): SessionQueue & { status: Ses
   return { ...session, status };
 }
 
-function listProjects(): ProjectView[] {
-  mkdirSync(QUEUES_DIR, { recursive: true });
-
-  return readdirSync(QUEUES_DIR, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(dir => {
-      const project = dir.name;
-      const dirPath = join(QUEUES_DIR, project);
-      const sessions = readdirSync(dirPath)
-        .filter(f => f.endsWith('.json'))
-        .map(f => {
-          try {
-            const raw = JSON.parse(readFileSync(join(dirPath, f), 'utf-8')) as SessionQueue;
-            return withComputedStatus(raw);
-          } catch { return null; }
-        })
-        .filter((s): s is NonNullable<typeof s> => s !== null);
-
-      if (sessions.length === 0) return null;
-
-      const hasPrompts = sessions.some(s => s.prompts.length > 0);
-      const allCompleted = hasPrompts && sessions.every(s =>
-        s.prompts.length > 0 && s.prompts.every(p => p.status === 'completed')
-      );
-      const queueStatus: QueueStatus = allCompleted ? 'completed' : hasPrompts ? 'active' : 'empty';
-
-      return { project, directory: sessions[0].directory, sessions, queueStatus };
-    })
-    .filter((p): p is NonNullable<typeof p> => p !== null);
-}
-
-function getProject(project: string): ProjectView | null {
-  const dirPath = join(QUEUES_DIR, project);
+function loadProjectView(project: string, dirPath: string): ProjectView | null {
   let files: string[];
   try {
     files = readdirSync(dirPath).filter(f => f.endsWith('.json'));
@@ -106,6 +74,19 @@ function getProject(project: string): ProjectView | null {
   const queueStatus: QueueStatus = allCompleted ? 'completed' : hasPrompts ? 'active' : 'empty';
 
   return { project, directory: sessions[0].directory, sessions, queueStatus };
+}
+
+function listProjects(): ProjectView[] {
+  mkdirSync(QUEUES_DIR, { recursive: true });
+
+  return readdirSync(QUEUES_DIR, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(dir => loadProjectView(dir.name, join(QUEUES_DIR, dir.name)))
+    .filter((p): p is NonNullable<typeof p> => p !== null);
+}
+
+function getProject(project: string): ProjectView | null {
+  return loadProjectView(project, join(QUEUES_DIR, project));
 }
 
 function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -173,6 +154,8 @@ function stopWatcher(): void {
   }
 }
 
+const HEARTBEAT_MS = 25_000;
+
 function handleSSE(_req: IncomingMessage, res: ServerResponse): void {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -184,9 +167,14 @@ function handleSSE(_req: IncomingMessage, res: ServerResponse): void {
   const data = JSON.stringify(listProjects());
   res.write(`event: projects\ndata: ${data}\n\n`);
 
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, HEARTBEAT_MS);
+
   sseClients.add(res);
 
   res.on('close', () => {
+    clearInterval(heartbeat);
     sseClients.delete(res);
   });
 }

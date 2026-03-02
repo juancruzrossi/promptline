@@ -31,10 +31,7 @@ export function useProjects() {
     }
   }, []);
 
-  // Initial fetch
-  useEffect(() => { refresh(); }, [refresh]);
-
-  // Fallback polling when SSE is disconnected
+  // Fallback polling when SSE is disconnected (also handles initial load if SSE is slow)
   useEffect(() => {
     if (connected) {
       if (fallbackRef.current) {
