@@ -6,7 +6,6 @@ import {
   loadProjectView,
   isSessionVisible,
   SESSION_ABANDONED_TIMEOUT_MS,
-  SESSION_EMPTY_IDLE_TIMEOUT_MS,
 } from '../../src/backend/queue-store.ts';
 
 describe('Status computation', () => {
@@ -169,35 +168,13 @@ describe('Status computation', () => {
       expect(isSessionVisible(session)).toBe(true);
     });
 
-    it('hides empty unclosed sessions when lastActivity exceeds empty idle timeout', () => {
+    it('shows open sessions even if lastActivity is stale', () => {
       const now = Date.now();
       const session = makeSession({
         startedAt: new Date(now - 10 * 60_000).toISOString(),
-        lastActivity: new Date(now - SESSION_EMPTY_IDLE_TIMEOUT_MS - 1000).toISOString(),
+        lastActivity: new Date(now - 10 * 60_000).toISOString(),
         closedAt: null,
         prompts: [],
-      });
-      expect(isSessionVisible(session, now)).toBe(false);
-    });
-
-    it('shows empty unclosed sessions when lastActivity is within empty idle timeout', () => {
-      const now = Date.now();
-      const session = makeSession({
-        startedAt: new Date(now - 30_000).toISOString(),
-        lastActivity: new Date(now - 30_000).toISOString(),
-        closedAt: null,
-        prompts: [],
-      });
-      expect(isSessionVisible(session, now)).toBe(true);
-    });
-
-    it('shows unclosed sessions with prompts even if lastActivity exceeds empty idle timeout', () => {
-      const now = Date.now();
-      const session = makeSession({
-        startedAt: new Date(now - 10 * 60_000).toISOString(),
-        lastActivity: new Date(now - SESSION_EMPTY_IDLE_TIMEOUT_MS - 1000).toISOString(),
-        closedAt: null,
-        prompts: [makePrompt({ status: 'completed' })],
       });
       expect(isSessionVisible(session, now)).toBe(true);
     });
@@ -246,7 +223,6 @@ describe('Status computation', () => {
         lastActivity: new Date().toISOString(),
         prompts: [],
       });
-      // closedAt defaults to null from makeSession
       expect(isSessionVisible(session)).toBe(true);
     });
   });
@@ -285,7 +261,7 @@ describe('Status computation', () => {
       expect(view!.sessions).toHaveLength(1);
     });
 
-    it('keeps open stale sessions with prompts visible (not abandoned)', () => {
+    it('keeps open stale sessions visible (not abandoned)', () => {
       const active = makeSession({
         project: 'proj',
         lastActivity: new Date().toISOString(),
@@ -296,7 +272,7 @@ describe('Status computation', () => {
         startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
         lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
         closedAt: null,
-        prompts: [makePrompt({ status: 'completed' })],
+        prompts: [],
       });
       writeSession(tmpDir, 'proj', active);
       writeSession(tmpDir, 'proj', stale);
@@ -304,50 +280,6 @@ describe('Status computation', () => {
       const view = loadProjectView(tmpDir, 'proj');
       expect(view).not.toBeNull();
       expect(view!.sessions).toHaveLength(2);
-    });
-
-    it('filters out empty ghost sessions (no prompts, stale activity)', () => {
-      const active = makeSession({
-        project: 'proj',
-        lastActivity: new Date().toISOString(),
-        closedAt: null,
-      });
-      const ghost = makeSession({
-        project: 'proj',
-        startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
-        lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
-        closedAt: null,
-        prompts: [],
-      });
-      writeSession(tmpDir, 'proj', active);
-      writeSession(tmpDir, 'proj', ghost);
-
-      const view = loadProjectView(tmpDir, 'proj');
-      expect(view).not.toBeNull();
-      expect(view!.sessions).toHaveLength(1);
-      expect(view!.sessions[0].sessionId).toBe(active.sessionId);
-    });
-
-    it('returns null when all sessions are empty ghost sessions', () => {
-      const ghost1 = makeSession({
-        project: 'proj',
-        startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
-        lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
-        closedAt: null,
-        prompts: [],
-      });
-      const ghost2 = makeSession({
-        project: 'proj',
-        startedAt: new Date(Date.now() - 15 * 60_000).toISOString(),
-        lastActivity: new Date(Date.now() - 15 * 60_000).toISOString(),
-        closedAt: null,
-        prompts: [],
-      });
-      writeSession(tmpDir, 'proj', ghost1);
-      writeSession(tmpDir, 'proj', ghost2);
-
-      const view = loadProjectView(tmpDir, 'proj');
-      expect(view).toBeNull();
     });
 
     it('filters out abandoned sessions (>24h)', () => {
