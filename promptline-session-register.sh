@@ -109,6 +109,7 @@ if os.path.isfile(queue_file):
         with open(queue_file, "r") as f:
             data = json.load(f)
         data["lastActivity"] = now
+        data["closedAt"] = None
         if not data.get("sessionName"):
             data["sessionName"] = extract_session_name(transcript_path)
         if owner_pid is not None and owner_pid > 0:
