@@ -24,6 +24,12 @@ if [ -z "$CWD" ] || [ -z "$SESSION_ID" ]; then
   exit 0
 fi
 
+OWNER_PID="${PPID:-}"
+OWNER_STARTED_AT=""
+if [ -n "$OWNER_PID" ]; then
+  OWNER_STARTED_AT=$(ps -p "$OWNER_PID" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//' || true)
+fi
+
 # Search for existing session across all projects
 QUEUES_BASE="$HOME/.promptline/queues"
 EXISTING=$(find "$QUEUES_BASE" -maxdepth 2 -name "$SESSION_ID.json" -print -quit 2>/dev/null || true)
@@ -39,7 +45,7 @@ else
   mkdir -p "$QUEUE_DIR"
 fi
 
-export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH
+export QUEUE_FILE SESSION_ID CWD PROJECT TRANSCRIPT_PATH OWNER_PID OWNER_STARTED_AT
 
 python3 << 'PYEOF'
 import json, os, tempfile
@@ -89,7 +95,14 @@ session_id = os.environ["SESSION_ID"]
 cwd = os.environ["CWD"]
 project = os.environ["PROJECT"]
 transcript_path = os.environ.get("TRANSCRIPT_PATH", "")
+owner_pid_raw = os.environ.get("OWNER_PID", "").strip()
+owner_started_at = os.environ.get("OWNER_STARTED_AT", "").strip() or None
 now = datetime.now(timezone.utc).isoformat()
+
+try:
+    owner_pid = int(owner_pid_raw) if owner_pid_raw else None
+except ValueError:
+    owner_pid = None
 
 if os.path.isfile(queue_file):
     try:
@@ -98,6 +111,14 @@ if os.path.isfile(queue_file):
         data["lastActivity"] = now
         if not data.get("sessionName"):
             data["sessionName"] = extract_session_name(transcript_path)
+        if owner_pid is not None and owner_pid > 0:
+            data["ownerPid"] = owner_pid
+        elif "ownerPid" not in data:
+            data["ownerPid"] = None
+        if owner_started_at is not None:
+            data["ownerStartedAt"] = owner_started_at
+        elif "ownerStartedAt" not in data:
+            data["ownerStartedAt"] = None
         atomic_write(queue_file, data)
     except (json.JSONDecodeError, IOError):
         pass
@@ -114,6 +135,8 @@ else:
         "currentPromptId": None,
         "completedAt": None,
         "closedAt": None,
+        "ownerPid": owner_pid if owner_pid is not None and owner_pid > 0 else None,
+        "ownerStartedAt": owner_started_at,
     }
     atomic_write(queue_file, data)
 

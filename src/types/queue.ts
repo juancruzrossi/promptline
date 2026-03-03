@@ -21,6 +21,8 @@ export interface SessionQueue {
   currentPromptId: string | null;
   completedAt: string | null;
   closedAt: string | null;
+  ownerPid?: number | null;
+  ownerStartedAt?: string | null;
 }
 
 export type SessionWithStatus = SessionQueue & { status: SessionStatus };

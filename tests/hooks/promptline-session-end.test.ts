@@ -20,6 +20,10 @@ function runHook(input: object, env: Record<string, string> = {}): { exitCode: n
   }
 }
 
+function isoMsAgo(ms: number): string {
+  return new Date(Date.now() - ms).toISOString();
+}
+
 describe('promptline-session-end.sh', () => {
   let fakeHome: string;
   const sessionId = 'test-session-abc';
@@ -157,7 +161,7 @@ describe('promptline-session-end.sh', () => {
         { id: 'p2', text: 'do that', status: 'running', createdAt: '2026-01-01T00:00:00+00:00', completedAt: null },
       ],
       startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
-      currentPromptId: 'p2', completedAt: null, closedAt: null,
+      currentPromptId: 'p2', completedAt: null, closedAt: null, ownerPid: 999_999,
     }, null, 2));
 
     runHook(
@@ -173,7 +177,7 @@ describe('promptline-session-end.sh', () => {
     expect(withPrompts.prompts[1].completedAt).toBeTruthy();
   });
 
-  it('closes orphaned sessions across all projects, not just the current one', () => {
+  it('does not close active sessions in other projects when ownerPid is alive', () => {
     // Current project
     const queuesDir = join(fakeHome, '.promptline', 'queues', project);
     mkdirSync(queuesDir, { recursive: true });
@@ -185,7 +189,7 @@ describe('promptline-session-end.sh', () => {
       currentPromptId: null, completedAt: null, closedAt: null,
     }, null, 2));
 
-    // Orphan in a DIFFERENT project
+    // Orphan in a different project should still be swept.
     const otherProject = 'other-project';
     const otherDir = join(fakeHome, '.promptline', 'queues', otherProject);
     mkdirSync(otherDir, { recursive: true });
@@ -193,16 +197,16 @@ describe('promptline-session-end.sh', () => {
     writeFileSync(join(otherDir, 'orphan-other.json'), JSON.stringify({
       sessionId: 'orphan-other', project: otherProject, directory: `/tmp/${otherProject}`,
       sessionName: null, prompts: [],
-      startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
-      currentPromptId: null, completedAt: null, closedAt: null,
+      startedAt: isoMsAgo(2 * 24 * 60 * 60 * 1000), lastActivity: isoMsAgo(2 * 24 * 60 * 60 * 1000),
+      currentPromptId: null, completedAt: null, closedAt: null, ownerPid: 999_999,
     }, null, 2));
 
-    // Session with pending work in other project (should be closed AND prompts cancelled)
+    // Active session in another project must be preserved.
     writeFileSync(join(otherDir, 'active-other.json'), JSON.stringify({
       sessionId: 'active-other', project: otherProject, directory: `/tmp/${otherProject}`,
       sessionName: 'Working', prompts: [{ id: 'p1', text: 'do it', status: 'pending', createdAt: '2026-01-01T00:00:00+00:00', completedAt: null }],
-      startedAt: '2026-01-01T00:00:00+00:00', lastActivity: '2026-01-01T00:00:00+00:00',
-      currentPromptId: null, completedAt: null, closedAt: null,
+      startedAt: isoMsAgo(2_000), lastActivity: isoMsAgo(2_000),
+      currentPromptId: null, completedAt: null, closedAt: null, ownerPid: process.pid,
     }, null, 2));
 
     const result = runHook(
@@ -215,14 +219,74 @@ describe('promptline-session-end.sh', () => {
     const current = JSON.parse(readFileSync(join(queuesDir, `${sessionId}.json`), 'utf-8'));
     expect(current.closedAt).toBeTruthy();
 
-    // Orphan in OTHER project also closed
+    // Orphan in other project also closed.
     const orphanOther = JSON.parse(readFileSync(join(otherDir, 'orphan-other.json'), 'utf-8'));
     expect(orphanOther.closedAt).toBeTruthy();
 
-    // Session with pending work in OTHER project also closed, prompts cancelled
+    // Active session in other project remains open.
     const activeOther = JSON.parse(readFileSync(join(otherDir, 'active-other.json'), 'utf-8'));
-    expect(activeOther.closedAt).toBeTruthy();
-    expect(activeOther.prompts[0].status).toBe('cancelled');
+    expect(activeOther.closedAt).toBeNull();
+    expect(activeOther.prompts[0].status).toBe('pending');
+    expect(activeOther.prompts[0].completedAt).toBeNull();
+  });
+
+  it('keeps legacy sessions open when lastActivity is recent and ownerPid is missing', () => {
+    const queuesDir = join(fakeHome, '.promptline', 'queues', project);
+    mkdirSync(queuesDir, { recursive: true });
+
+    writeFileSync(join(queuesDir, `${sessionId}.json`), JSON.stringify({
+      sessionId, project, directory: `/tmp/${project}`,
+      sessionName: 'Current', prompts: [],
+      startedAt: isoMsAgo(2_000), lastActivity: isoMsAgo(2_000),
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    writeFileSync(join(queuesDir, 'legacy-active.json'), JSON.stringify({
+      sessionId: 'legacy-active', project, directory: `/tmp/${project}`,
+      sessionName: 'Legacy active', prompts: [{ id: 'p1', text: 'wait', status: 'pending', createdAt: isoMsAgo(3_000), completedAt: null }],
+      startedAt: isoMsAgo(30_000), lastActivity: isoMsAgo(30_000),
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    const result = runHook(
+      { session_id: sessionId, cwd: `/tmp/${project}` },
+      { HOME: fakeHome },
+    );
+    expect(result.exitCode).toBe(0);
+
+    const legacyActive = JSON.parse(readFileSync(join(queuesDir, 'legacy-active.json'), 'utf-8'));
+    expect(legacyActive.closedAt).toBeNull();
+    expect(legacyActive.prompts[0].status).toBe('pending');
+  });
+
+  it('closes legacy sessions when lastActivity is stale and ownerPid is missing', () => {
+    const queuesDir = join(fakeHome, '.promptline', 'queues', project);
+    mkdirSync(queuesDir, { recursive: true });
+
+    writeFileSync(join(queuesDir, `${sessionId}.json`), JSON.stringify({
+      sessionId, project, directory: `/tmp/${project}`,
+      sessionName: 'Current', prompts: [],
+      startedAt: isoMsAgo(2_000), lastActivity: isoMsAgo(2_000),
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    writeFileSync(join(queuesDir, 'legacy-orphan.json'), JSON.stringify({
+      sessionId: 'legacy-orphan', project, directory: `/tmp/${project}`,
+      sessionName: 'Legacy orphan', prompts: [{ id: 'p1', text: 'stale', status: 'pending', createdAt: isoMsAgo(2 * 24 * 60 * 60 * 1000), completedAt: null }],
+      startedAt: isoMsAgo(2 * 24 * 60 * 60 * 1000), lastActivity: isoMsAgo(2 * 24 * 60 * 60 * 1000),
+      currentPromptId: null, completedAt: null, closedAt: null,
+    }, null, 2));
+
+    const result = runHook(
+      { session_id: sessionId, cwd: `/tmp/${project}` },
+      { HOME: fakeHome },
+    );
+    expect(result.exitCode).toBe(0);
+
+    const legacyOrphan = JSON.parse(readFileSync(join(queuesDir, 'legacy-orphan.json'), 'utf-8'));
+    expect(legacyOrphan.closedAt).toBeTruthy();
+    expect(legacyOrphan.prompts[0].status).toBe('cancelled');
+    expect(legacyOrphan.prompts[0].completedAt).toBeTruthy();
   });
 
   it('cancels pending and running prompts when closing current session', () => {
