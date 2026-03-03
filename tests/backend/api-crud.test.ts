@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTmpDir, removeTmpDir, makeSession, makePrompt } from './helpers.ts';
+import { createTmpDir, removeTmpDir, makeSession } from './helpers.ts';
 import {
   writeSession,
   readSession,
