@@ -41,6 +41,10 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: npm ci
 
+      - name: Validate
+        if: steps.check.outputs.skip == 'false'
+        run: npm test && npm run build
+
       - name: Publish to NPM
         if: steps.check.outputs.skip == 'false'
         run: npm publish --provenance --access public
