@@ -54,6 +54,10 @@ def atomic_write(path, obj):
 def close_session(path, now):
     with open(path, "r") as f:
         data = json.load(f)
+    for p in data.get("prompts", []):
+        if p.get("status") in ("pending", "running"):
+            p["status"] = "cancelled"
+            p["completedAt"] = now
     data["closedAt"] = now
     data["lastActivity"] = now
     atomic_write(path, data)
@@ -79,9 +83,6 @@ for project_dir in glob.glob(os.path.join(queues_base, "*")):
             with open(path, "r") as f:
                 data = json.load(f)
             if data.get("closedAt") is not None:
-                continue
-            has_pending = any(p.get("status") in ("pending", "running") for p in data.get("prompts", []))
-            if has_pending:
                 continue
             close_session(path, now)
         except (json.JSONDecodeError, IOError, OSError):

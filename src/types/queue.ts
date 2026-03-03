@@ -1,4 +1,4 @@
-export type PromptStatus = 'pending' | 'running' | 'completed';
+export type PromptStatus = 'pending' | 'running' | 'completed' | 'cancelled';
 export type SessionStatus = 'active' | 'idle';
 export type QueueStatus = 'active' | 'completed' | 'empty';
 

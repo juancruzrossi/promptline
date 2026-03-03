@@ -206,6 +206,50 @@ describe('promptline-prompt-queue.sh', () => {
     expect(decision.reason).toContain('Cross-dir task');
   });
 
+  it('skips cancelled prompts and does not block', () => {
+    const p1 = makePrompt({ id: 'p1', text: 'Was cancelled', status: 'cancelled' });
+    const p2 = makePrompt({ id: 'p2', text: 'Also cancelled', status: 'cancelled' });
+    const session = {
+      sessionId: 'ses-cancel',
+      project: 'myapp',
+      directory: '/projects/myapp',
+      sessionName: null,
+      prompts: [p1, p2],
+      startedAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      currentPromptId: null,
+      completedAt: null,
+    };
+    writeSessionFile(homeDir, 'myapp', 'ses-cancel', session);
+
+    const output = runHook(HOOK_PATH, hookInput('ses-cancel', 'myapp'), homeDir);
+
+    expect(output.trim()).toBe('');
+  });
+
+  it('advances past cancelled prompts to next pending', () => {
+    const p1 = makePrompt({ id: 'p1', text: 'Cancelled one', status: 'cancelled' });
+    const p2 = makePrompt({ id: 'p2', text: 'Still pending', status: 'pending' });
+    const session = {
+      sessionId: 'ses-mix',
+      project: 'myapp',
+      directory: '/projects/myapp',
+      sessionName: null,
+      prompts: [p1, p2],
+      startedAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      currentPromptId: null,
+      completedAt: null,
+    };
+    writeSessionFile(homeDir, 'myapp', 'ses-mix', session);
+
+    const output = runHook(HOOK_PATH, hookInput('ses-mix', 'myapp'), homeDir);
+    const decision = JSON.parse(output.trim());
+
+    expect(decision.decision).toBe('block');
+    expect(decision.reason).toContain('Still pending');
+  });
+
   it('shows remaining queued count in reason', () => {
     const p1 = makePrompt({ id: 'p1', text: 'Task one', status: 'pending' });
     const p2 = makePrompt({ id: 'p2', text: 'Task two', status: 'pending' });

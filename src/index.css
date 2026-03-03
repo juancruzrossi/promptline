@@ -11,6 +11,7 @@
   --color-pending: #60a5fa;
   --color-idle: #f472b6;
   --color-completed: #34d399;
+  --color-cancelled: #f87171;
 }
 
 html {

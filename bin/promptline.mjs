@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync, copyFileSync, chmodSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, copyFileSync, chmodSync, readdirSync, mkdirSync, renameSync, unlinkSync } from 'fs'
 import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { spawn, execSync } from 'child_process'
@@ -94,10 +94,57 @@ vite.stderr.on('data', (data) => {
 vite.on('close', (code) => process.exit(code ?? 0))
 
 process.on('SIGINT', () => {
+  cancelAllPendingPrompts()
   vite.kill('SIGINT')
   console.log('\n\x1b[33m⏹\x1b[0m PromptLine stopped.')
   process.exit(0)
 })
+
+// --- Cleanup ---
+
+function cancelAllPendingPrompts() {
+  const queuesDir = join(homedir(), '.promptline', 'queues')
+  let projectDirs
+  try {
+    projectDirs = readdirSync(queuesDir, { withFileTypes: true }).filter(d => d.isDirectory())
+  } catch {
+    return
+  }
+
+  const now = new Date().toISOString()
+  for (const dir of projectDirs) {
+    const projectPath = join(queuesDir, dir.name)
+    let files
+    try {
+      files = readdirSync(projectPath).filter(f => f.endsWith('.json'))
+    } catch {
+      continue
+    }
+
+    for (const file of files) {
+      const filePath = join(projectPath, file)
+      try {
+        const data = JSON.parse(readFileSync(filePath, 'utf-8'))
+        let changed = false
+        for (const p of data.prompts || []) {
+          if (p.status === 'pending' || p.status === 'running') {
+            p.status = 'cancelled'
+            p.completedAt = now
+            changed = true
+          }
+        }
+        if (changed) {
+          data.lastActivity = now
+          const tmpPath = `${filePath}.tmp.${process.pid}`
+          writeFileSync(tmpPath, JSON.stringify(data, null, 2))
+          renameSync(tmpPath, filePath)
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+}
 
 // --- Helpers ---
 
