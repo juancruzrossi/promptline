@@ -82,6 +82,9 @@ function hasPendingWork(session: SessionQueue): boolean {
 }
 
 export function withComputedStatus(session: SessionQueue): SessionQueue & { status: SessionStatus } {
+  if (session.closedAt != null) {
+    return { ...session, status: 'idle' };
+  }
   const hasRunningPrompt = session.prompts.some(p => p.status === 'running');
   const isStale = msSinceLastActivity(session) > SESSION_ACTIVE_TIMEOUT_MS;
   const status: SessionStatus = (hasRunningPrompt || !isStale) ? 'active' : 'idle';
@@ -89,8 +92,8 @@ export function withComputedStatus(session: SessionQueue): SessionQueue & { stat
 }
 
 export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
-  if (hasPendingWork(session)) return true;
   if (session.closedAt != null) return false;
+  if (hasPendingWork(session)) return true;
   const msSinceStart = now - new Date(session.startedAt).getTime();
   return msSinceStart <= SESSION_ABANDONED_TIMEOUT_MS;
 }

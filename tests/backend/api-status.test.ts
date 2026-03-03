@@ -20,6 +20,15 @@ describe('Status computation', () => {
   });
 
   describe('withComputedStatus', () => {
+    it('returns idle when session is closed even if it has a running prompt', () => {
+      const session = makeSession({
+        closedAt: new Date().toISOString(),
+        prompts: [makePrompt({ status: 'running' })],
+      });
+      const result = withComputedStatus(session);
+      expect(result.status).toBe('idle');
+    });
+
     it('returns active when session has a running prompt', () => {
       const session = makeSession({
         lastActivity: new Date(Date.now() - 2 * 60_000).toISOString(),
@@ -152,20 +161,20 @@ describe('Status computation', () => {
       expect(isSessionVisible(session)).toBe(false);
     });
 
-    it('shows closed sessions that have pending prompts', () => {
+    it('hides closed sessions that still have pending prompts', () => {
       const session = makeSession({
         closedAt: new Date().toISOString(),
         prompts: [makePrompt({ status: 'pending' })],
       });
-      expect(isSessionVisible(session)).toBe(true);
+      expect(isSessionVisible(session)).toBe(false);
     });
 
-    it('shows closed sessions that have running prompts', () => {
+    it('hides closed sessions that still have running prompts', () => {
       const session = makeSession({
         closedAt: new Date().toISOString(),
         prompts: [makePrompt({ status: 'running' })],
       });
-      expect(isSessionVisible(session)).toBe(true);
+      expect(isSessionVisible(session)).toBe(false);
     });
 
     it('shows open sessions even if lastActivity is stale', () => {
@@ -248,7 +257,7 @@ describe('Status computation', () => {
       expect(view!.sessions[0].sessionId).toBe(active.sessionId);
     });
 
-    it('keeps closed sessions that have pending prompts', () => {
+    it('filters out closed sessions even when they still have pending prompts', () => {
       const closed = makeSession({
         project: 'proj',
         closedAt: new Date().toISOString(),
@@ -257,8 +266,7 @@ describe('Status computation', () => {
       writeSession(tmpDir, 'proj', closed);
 
       const view = loadProjectView(tmpDir, 'proj');
-      expect(view).not.toBeNull();
-      expect(view!.sessions).toHaveLength(1);
+      expect(view).toBeNull();
     });
 
     it('keeps open stale sessions visible (not abandoned)', () => {

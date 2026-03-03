@@ -100,6 +100,36 @@ describe('promptline-session-register.sh', () => {
     expect(data.sessionName).toBe('Existing session');
   });
 
+  it('reopens an existing closed session on SessionStart', () => {
+    const queueDir = join(homeDir, '.promptline/queues/myproject');
+    mkdirSync(queueDir, { recursive: true });
+
+    const closedAt = '2026-01-01T01:00:00+00:00';
+    const existing = {
+      sessionId: 'ses-reopen',
+      project: 'myproject',
+      directory: '/home/user/myproject',
+      sessionName: 'Existing session',
+      prompts: [],
+      startedAt: '2026-01-01T00:00:00+00:00',
+      lastActivity: '2026-01-01T00:00:00+00:00',
+      currentPromptId: null,
+      completedAt: null,
+      closedAt,
+    };
+    const filePath = join(queueDir, 'ses-reopen.json');
+    writeFileSync(filePath, JSON.stringify(existing, null, 2));
+
+    runHook(
+      HOOK_PATH,
+      { session_id: 'ses-reopen', cwd: '/home/user/myproject', transcript_path: '' },
+      homeDir,
+    );
+
+    const data = JSON.parse(readFileSync(filePath, 'utf-8'));
+    expect(data.closedAt).toBeNull();
+  });
+
   it('extracts session name from transcript', () => {
     const transcriptDir = join(homeDir, 'transcripts');
     mkdirSync(transcriptDir, { recursive: true });
