@@ -32,6 +32,11 @@ const STATUS_STYLES: Record<Prompt['status'], { color: string; badge: string; la
     badge: 'bg-[var(--color-completed)]/15 text-[var(--color-completed)]',
     label: 'completed',
   },
+  cancelled: {
+    color: 'var(--color-cancelled)',
+    badge: 'bg-[var(--color-cancelled)]/15 text-[var(--color-cancelled)]',
+    label: 'cancelled',
+  },
 };
 
 export function PromptCard({
@@ -52,7 +57,7 @@ export function PromptCard({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const styles = STATUS_STYLES[prompt.status];
-  const isCompleted = prompt.status === 'completed';
+  const isDone = prompt.status === 'completed' || prompt.status === 'cancelled';
   const isPending = prompt.status === 'pending';
   const isRunning = prompt.status === 'running';
 
@@ -167,7 +172,7 @@ export function PromptCard({
         className={[
           'flex gap-0 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden',
           'transition-all duration-150',
-          isCompleted ? 'opacity-60' : '',
+          isDone ? 'opacity-60' : '',
           isPending && !editing ? 'cursor-pointer hover:border-white/20 hover:bg-white/8' : '',
           isRunning ? 'border-l-0' : '',
           isDragging ? 'opacity-40 scale-[0.98]' : '',

@@ -119,7 +119,7 @@ export function loadProjectView(queuesDir: string, project: string): ProjectView
 
   const hasPrompts = sessions.some(s => s.prompts.length > 0);
   const allCompleted = hasPrompts && sessions.every(s =>
-    s.prompts.length > 0 && s.prompts.every(p => p.status === 'completed')
+    s.prompts.length > 0 && s.prompts.every(p => p.status === 'completed' || p.status === 'cancelled')
   );
   const queueStatus: QueueStatus = allCompleted ? 'completed' : hasPrompts ? 'active' : 'empty';
 
@@ -174,7 +174,7 @@ export function updatePrompt(
   }
   if (updates.status !== undefined) {
     session.prompts[idx].status = updates.status;
-    if (updates.status === 'completed') {
+    if (updates.status === 'completed' || updates.status === 'cancelled') {
       session.prompts[idx].completedAt = new Date().toISOString();
     }
   }

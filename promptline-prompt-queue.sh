@@ -176,7 +176,7 @@ try:
             p["completedAt"] = now
 
     # Step 1b: Track completedAt when all prompts are done
-    all_done = all(p.get("status") == "completed" for p in prompts) and len(prompts) > 0
+    all_done = all(p.get("status") in ("completed", "cancelled") for p in prompts) and len(prompts) > 0
     if all_done and not data.get("completedAt"):
         data["completedAt"] = now
 

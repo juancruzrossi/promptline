@@ -46,8 +46,8 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
     }
   }
 
-  const activePrompts = session.prompts.filter(p => p.status !== 'completed');
-  const completedPrompts = session.prompts.filter(p => p.status === 'completed').reverse();
+  const activePrompts = session.prompts.filter(p => p.status !== 'completed' && p.status !== 'cancelled');
+  const donePrompts = session.prompts.filter(p => p.status === 'completed' || p.status === 'cancelled').reverse();
   const pendingCount = session.prompts.filter(p => p.status === 'pending').length;
 
   const displayName = session.sessionName || '(session)';
@@ -168,7 +168,7 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
       {/* Session content */}
       {expanded && (
         <div className="px-4 pb-4 space-y-2">
-          {activePrompts.length === 0 && completedPrompts.length === 0 && (
+          {activePrompts.length === 0 && donePrompts.length === 0 && (
             <p className="text-xs text-[var(--color-muted)] py-2">No prompts yet</p>
           )}
 
@@ -180,9 +180,9 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
 
           <AddPromptForm project={project} sessionId={session.sessionId} onAdded={onMutate} />
 
-          {completedPrompts.length > 0 && (
+          {donePrompts.length > 0 && (
             <div className="pt-1 space-y-2 opacity-60" role="list" aria-label="Completed prompts">
-              {renderPromptList(completedPrompts, false)}
+              {renderPromptList(donePrompts, false)}
             </div>
           )}
         </div>

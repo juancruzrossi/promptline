@@ -269,7 +269,7 @@ async function handleApi(
         updates.text = body.text as string;
       }
       if (body.status !== undefined) {
-        const validStatuses: PromptStatus[] = ['pending', 'running', 'completed'];
+        const validStatuses: PromptStatus[] = ['pending', 'running', 'completed', 'cancelled'];
         if (!validStatuses.includes(body.status as PromptStatus)) {
           return jsonError(res, 400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`);
         }
