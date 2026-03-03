@@ -49,6 +49,9 @@ describe('promptline-session-register.sh', () => {
     expect(data.lastActivity).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(data.currentPromptId).toBeNull();
     expect(data.completedAt).toBeNull();
+    expect(typeof data.ownerPid).toBe('number');
+    expect(data.ownerPid).toBeGreaterThan(0);
+    expect(data.ownerStartedAt === null || typeof data.ownerStartedAt === 'string').toBe(true);
   });
 
   it('derives project name from cwd basename', () => {
