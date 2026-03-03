@@ -125,6 +125,7 @@ function cancelAllPendingPrompts() {
       const filePath = join(projectPath, file)
       try {
         const data = JSON.parse(readFileSync(filePath, 'utf-8'))
+        if (data.closedAt) continue
         let changed = false
         for (const p of data.prompts || []) {
           if (p.status === 'pending' || p.status === 'running') {

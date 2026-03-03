@@ -57,9 +57,7 @@ export function PromptCard({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const styles = STATUS_STYLES[prompt.status];
-  const isCompleted = prompt.status === 'completed';
-  const isCancelled = prompt.status === 'cancelled';
-  const isDone = isCompleted || isCancelled;
+  const isDone = prompt.status === 'completed' || prompt.status === 'cancelled';
   const isPending = prompt.status === 'pending';
   const isRunning = prompt.status === 'running';
 
