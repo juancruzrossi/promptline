@@ -1,48 +1,36 @@
 import { useState, useRef } from 'react';
 import { api } from '../api/client';
-import type { SessionWithStatus, SessionStatus, Prompt } from '../types/queue';
+import type { SessionWithStatus, Prompt } from '../types/queue';
 import { TrashIcon } from './TrashIcon';
 import { PromptCard } from './PromptCard';
 import { AddPromptForm } from './AddPromptForm';
+import { InlineAlert } from './InlineAlert';
+import { StatusDot } from './StatusDot';
+import { toErrorMessage } from '../utils/errors';
 
 interface SessionSectionProps {
   session: SessionWithStatus;
   project: string;
-  onMutate: () => void;
+  onMutate: () => void | Promise<void>;
   defaultExpanded?: boolean;
-}
-
-function StatusDot({ status }: { status: SessionStatus }) {
-  if (status === 'active') {
-    return (
-      <span
-        className="animate-pulse-dot inline-block w-2 h-2 rounded-full bg-[var(--color-active)] shrink-0"
-        aria-label="Active session"
-      />
-    );
-  }
-  return (
-    <span
-      className="inline-block w-2 h-2 rounded-full bg-[var(--color-idle)] shrink-0"
-      aria-label="Idle session"
-    />
-  );
 }
 
 export function SessionSection({ session, project, onMutate, defaultExpanded = true }: SessionSectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [dragOver, setDragOver] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const dragSourceRef = useRef<string | null>(null);
 
   async function handleClearPrompts(e: React.MouseEvent) {
     e.stopPropagation();
     if (!window.confirm('Clear all prompts?')) return;
+    setActionError(null);
     try {
       await api.clearPrompts(project, session.sessionId);
-      onMutate();
-    } catch {
-      // Silent fail
+      await onMutate();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
     }
   }
 
@@ -71,7 +59,7 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
     dragSourceRef.current = null;
   }
 
-  function handleDrop(targetId: string) {
+  async function handleDrop(targetId: string) {
     const sourceId = dragSourceRef.current;
     const position = dragOver?.position ?? 'before';
     if (!sourceId || sourceId === targetId) {
@@ -95,7 +83,13 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
 
     const newOrder = reordered.map(p => p.id);
     handleDragEnd();
-    api.reorderPrompts(project, session.sessionId, newOrder).then(onMutate).catch(() => {});
+    setActionError(null);
+    try {
+      await api.reorderPrompts(project, session.sessionId, newOrder);
+      await onMutate();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+    }
   }
 
   function renderPromptList(prompts: Prompt[], reorderable: boolean) {
@@ -168,6 +162,8 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
       {/* Session content */}
       {expanded && (
         <div className="px-4 pb-4 space-y-2">
+          {actionError && <InlineAlert message={actionError} className="pt-2" />}
+
           {activePrompts.length === 0 && donePrompts.length === 0 && (
             <p className="text-xs text-[var(--color-muted)] py-2">No prompts yet</p>
           )}

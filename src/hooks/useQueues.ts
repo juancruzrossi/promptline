@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ProjectView } from '../types/queue';
 import { api } from '../api/client';
 import { useSSE } from './useSSE';
+import { toErrorMessage } from '../utils/errors';
 
 const FALLBACK_POLL_MS = 2000;
 
@@ -25,7 +26,7 @@ export function useProjects() {
       setProjects(data);
       setError(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -40,6 +41,7 @@ export function useProjects() {
       }
       return;
     }
+    void refresh();
     fallbackRef.current = setInterval(refresh, FALLBACK_POLL_MS);
     return () => {
       if (fallbackRef.current) {

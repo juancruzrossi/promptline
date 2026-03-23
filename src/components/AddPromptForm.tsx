@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../api/client';
+import { InlineAlert } from './InlineAlert';
+import { toErrorMessage } from '../utils/errors';
 
 interface AddPromptFormProps {
   project: string;
   sessionId: string;
-  onAdded: () => void;
+  onAdded: () => void | Promise<void>;
 }
 
 export function AddPromptForm({ project, sessionId, onAdded }: AddPromptFormProps) {
   const [expanded, setExpanded] = useState(false);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -30,19 +33,21 @@ export function AddPromptForm({ project, sessionId, onAdded }: AddPromptFormProp
   function handleCancel() {
     setText('');
     setExpanded(false);
+    setActionError(null);
   }
 
   async function handleSubmit() {
     const trimmed = text.trim();
     if (!trimmed || submitting) return;
     setSubmitting(true);
+    setActionError(null);
     try {
       await api.addPrompt(project, sessionId, trimmed);
       setText('');
       setExpanded(false);
-      onAdded();
-    } catch {
-      // Keep form open so user can retry
+      await onAdded();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -97,6 +102,7 @@ export function AddPromptForm({ project, sessionId, onAdded }: AddPromptFormProp
         aria-label="Prompt text"
         disabled={submitting}
       />
+      {actionError && <InlineAlert message={actionError} className="px-4 pt-2" />}
       <div className="flex items-center justify-end gap-2 px-4 pb-3">
         <button
           type="button"
