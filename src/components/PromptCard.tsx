@@ -2,12 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import type { Prompt } from '../types/queue';
 import { api } from '../api/client';
 import { TrashIcon } from './TrashIcon';
+import { InlineAlert } from './InlineAlert';
+import { toErrorMessage } from '../utils/errors';
 
 interface PromptCardProps {
   prompt: Prompt;
   project: string;
   sessionId: string;
-  onMutate: () => void;
+  onMutate: () => void | Promise<void>;
   onDragStart?: (id: string) => void;
   onDragOver?: (id: string, position: 'before' | 'after') => void;
   onDragEnd?: () => void;
@@ -54,6 +56,7 @@ export function PromptCard({
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(prompt.text);
   const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const styles = STATUS_STYLES[prompt.status];
@@ -84,18 +87,20 @@ export function PromptCard({
   function handleEditCancel() {
     setEditText(prompt.text);
     setEditing(false);
+    setActionError(null);
   }
 
   async function handleEditSave() {
     const trimmed = editText.trim();
     if (!trimmed || saving) return;
     setSaving(true);
+    setActionError(null);
     try {
       await api.updatePrompt(project, sessionId, prompt.id, { text: trimmed });
       setEditing(false);
-      onMutate();
-    } catch {
-      // Keep edit open on error
+      await onMutate();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -115,11 +120,12 @@ export function PromptCard({
     e.stopPropagation();
     const confirmed = window.confirm('Delete this prompt?');
     if (!confirmed) return;
+    setActionError(null);
     try {
       await api.deletePrompt(project, sessionId, prompt.id);
-      onMutate();
-    } catch {
-      // Silent fail
+      await onMutate();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
     }
   }
 
@@ -278,6 +284,8 @@ export function PromptCard({
               {prompt.text}
             </p>
           )}
+
+          {actionError && <InlineAlert message={actionError} className="mt-2" />}
         </div>
       </div>
     </div>

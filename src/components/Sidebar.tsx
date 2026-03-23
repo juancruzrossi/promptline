@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import type { ProjectView } from '../types/queue';
+import { StatusDot } from './StatusDot';
 
 interface SidebarProps {
   projects: ProjectView[];
@@ -18,32 +20,27 @@ function getPendingCount(project: ProjectView): number {
   );
 }
 
-function StatusDot({ status }: { status: 'active' | 'idle' | 'none' }) {
-  if (status === 'active') {
-    return (
-      <span
-        className="animate-pulse-dot inline-block w-2 h-2 rounded-full bg-[var(--color-active)] shrink-0"
-        aria-label="Active session"
-      />
-    );
-  }
-  if (status === 'idle') {
-    return (
-      <span
-        className="inline-block w-2 h-2 rounded-full bg-[var(--color-idle)] shrink-0"
-        aria-label="Idle session"
-      />
-    );
-  }
-  return (
-    <span
-      className="inline-block w-2 h-2 rounded-full bg-[var(--color-muted)] shrink-0"
-      aria-label="No session"
-    />
-  );
+function getProjectRank(project: ProjectView, pendingCount: number): number {
+  if (pendingCount > 0) return 0;
+  if (getSessionStatus(project) === 'active') return 1;
+  return 2;
 }
 
 export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarProps) {
+  const pendingCounts = useMemo(
+    () => new Map(projects.map((project) => [project.project, getPendingCount(project)])),
+    [projects],
+  );
+
+  const sortedProjects = useMemo(
+    () => [...projects].sort((a, b) => {
+      const aPending = pendingCounts.get(a.project) ?? 0;
+      const bPending = pendingCounts.get(b.project) ?? 0;
+      return getProjectRank(a, aPending) - getProjectRank(b, bPending);
+    }),
+    [pendingCounts, projects],
+  );
+
   return (
     <aside
       className="flex flex-col w-[280px] shrink-0 h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
@@ -65,16 +62,9 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
           <p className="px-5 py-4 text-xs text-[var(--color-muted)]">No projects found.</p>
         )}
         <ul role="list">
-          {[...projects].sort((a, b) => {
-            const rank = (p: ProjectView) => {
-              if (getPendingCount(p) > 0) return 0;
-              if (getSessionStatus(p) === 'active') return 1;
-              return 2;
-            };
-            return rank(a) - rank(b);
-          }).map((project) => {
+          {sortedProjects.map((project) => {
             const status = getSessionStatus(project);
-            const pending = getPendingCount(project);
+            const pending = pendingCounts.get(project.project) ?? 0;
             const isSelected = project.project === selectedProject;
             const sessionCount = project.sessions.length;
 

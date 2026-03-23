@@ -1,41 +1,38 @@
 import { useState } from 'react';
 import { selectProject } from '../hooks/useQueue';
 import { api } from '../api/client';
-import type { ProjectView, SessionWithStatus } from '../types/queue';
+import type { ProjectView } from '../types/queue';
 import { SessionSection } from './SessionSection';
+import { InlineAlert } from './InlineAlert';
+import { toErrorMessage } from '../utils/errors';
 
 interface ProjectDetailProps {
   project: string;
   projects: ProjectView[];
   onProjectDeleted: () => void;
+  onMutate: () => void | Promise<void>;
 }
 
-function isVisible(session: SessionWithStatus): boolean {
-  if (session.status === 'active') return true;
-  return session.prompts.some(p => p.status === 'pending' || p.status === 'running');
-}
-
-export function ProjectDetail({ project, projects, onProjectDeleted }: ProjectDetailProps) {
+export function ProjectDetail({ project, projects, onProjectDeleted, onMutate }: ProjectDetailProps) {
   const projectView = selectProject(project, projects);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleDeleteProject() {
     const confirmed = window.confirm(
       `Delete project "${project}"? This removes all sessions and prompts.`
     );
     if (!confirmed) return;
+    setActionError(null);
     try {
       await api.deleteProject(project);
       onProjectDeleted();
-    } catch {
-      // Silent fail
+      await onMutate();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
     }
   }
 
   if (!projectView) return null;
-
-  const visibleSessions = projectView.sessions.filter(isVisible);
-  const historySessions = projectView.sessions.filter(s => !isVisible(s));
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -65,11 +62,12 @@ export function ProjectDetail({ project, projects, onProjectDeleted }: ProjectDe
             Delete Project
           </button>
         </div>
+        {actionError && <InlineAlert message={actionError} className="mt-3" />}
       </div>
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-        {visibleSessions.length === 0 && historySessions.length === 0 && (
+        {projectView.sessions.length === 0 && (
           <div className="flex flex-col items-center gap-3 py-12 select-none opacity-40">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-muted)]">
               <path d="M12 20h9" />
@@ -82,52 +80,15 @@ export function ProjectDetail({ project, projects, onProjectDeleted }: ProjectDe
           </div>
         )}
 
-        {visibleSessions.map(session => (
+        {projectView.sessions.map(session => (
           <SessionSection
             key={session.sessionId}
             session={session}
             project={project}
-            onMutate={() => {}}
+            onMutate={onMutate}
             defaultExpanded
           />
         ))}
-
-        {historySessions.length > 0 && (
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(v => !v)}
-              className={[
-                'flex items-center gap-2 text-xs text-[var(--color-muted)] uppercase tracking-wider py-1 cursor-pointer',
-                'hover:text-[var(--color-text)] transition-colors duration-150 focus:outline-none',
-              ].join(' ')}
-              aria-expanded={historyOpen}
-            >
-              <span
-                className="inline-block transition-transform duration-200"
-                style={{ transform: historyOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                aria-hidden="true"
-              >
-                ▶
-              </span>
-              History ({historySessions.length} {historySessions.length === 1 ? 'session' : 'sessions'})
-            </button>
-
-            {historyOpen && (
-              <div className="mt-2 space-y-3">
-                {historySessions.map(session => (
-                  <SessionSection
-                    key={session.sessionId}
-                    session={session}
-                    project={project}
-                    onMutate={() => {}}
-                    defaultExpanded={false}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         <div className="h-4" aria-hidden="true" />
       </div>

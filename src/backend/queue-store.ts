@@ -5,6 +5,8 @@ import type { SessionQueue, Prompt, PromptStatus, SessionStatus, QueueStatus, Pr
 export const SESSION_ACTIVE_TIMEOUT_MS = 60_000;
 export const SESSION_ABANDONED_TIMEOUT_MS = 24 * 60 * 60_000;
 const LOCK_STALE_MS = 10_000;
+const LOCK_RETRY_MS = 10;
+const LOCK_WAIT_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 
 function acquireLockSync(lockPath: string): void {
   for (let i = 0; i < 100; i++) {
@@ -20,8 +22,7 @@ function acquireLockSync(lockPath: string): void {
           continue;
         }
       } catch { continue; }
-      const end = Date.now() + 10;
-      while (Date.now() < end) { /* spin */ }
+      Atomics.wait(LOCK_WAIT_BUFFER, 0, 0, LOCK_RETRY_MS);
     }
   }
   try { unlinkSync(lockPath); } catch { /* ignore */ }

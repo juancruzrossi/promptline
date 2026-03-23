@@ -11,8 +11,8 @@
 
 ```bash
 npm run dev          # Vite dev server
-npm test             # vitest run (all tests)
-npm run test:watch   # vitest watch mode
+npm run lint         # ESLint
+npm run build        # TypeScript + Vite build
 ```
 
 ## Architecture
@@ -28,9 +28,7 @@ npm run test:watch   # vitest watch mode
 - GitHub Actions auto-publishes on version bump to main (OIDC trusted publisher, no token needed)
 - `repository` field in package.json is required for provenance verification
 
-## Testing
+## Validation
 
-- Framework: Vitest 4
-- Backend tests: `tests/backend/`
-- Hook tests: `tests/hooks/`
-- No frontend component tests (yet)
+- Prefer `npm run lint`
+- Prefer `npm run build`

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync, copyFileSync, chmodSync, readdirSync, mkdirSync, renameSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, readdirSync, renameSync } from 'fs'
 import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { spawn, execSync } from 'child_process'
 import { homedir } from 'os'
+import { installHooks as installPromptlineHooks, toErrorMessage } from './install-hooks.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkgDir = resolve(__dirname, '..')
@@ -36,7 +37,7 @@ if (process.argv[2] === 'update') {
     execSync('npm install -g @jxtools/promptline@latest', { stdio: 'inherit' })
     console.log(`\n\x1b[32m✓\x1b[0m Updated to v${latest}`)
   } catch (err) {
-    console.error(`\x1b[31m✗\x1b[0m Update failed: ${err.message}`)
+    console.error(`\x1b[31m✗\x1b[0m Update failed: ${toErrorMessage(err)}`)
     process.exit(1)
   }
 
@@ -150,57 +151,15 @@ function cancelAllPendingPrompts() {
 // --- Helpers ---
 
 function installHooks() {
-  // Copy hook scripts
-  execSync(`mkdir -p "${hooksDir}"`)
-
-  for (const file of hookFiles) {
-    const src = join(pkgDir, file)
-    const dest = join(hooksDir, file)
-    copyFileSync(src, dest)
-    chmodSync(dest, 0o755)
+  try {
+    installPromptlineHooks({
+      claudeDir,
+      hooksDir,
+      pkgDir,
+      hookFiles,
+    })
+  } catch (error) {
+    console.error(`\x1b[31m✗\x1b[0m ${toErrorMessage(error)}`)
+    process.exit(1)
   }
-
-  // Merge into settings.json
-  const settingsPath = join(claudeDir, 'settings.json')
-  let settings = {}
-
-  if (existsSync(settingsPath)) {
-    try {
-      settings = JSON.parse(readFileSync(settingsPath, 'utf-8'))
-    } catch {
-      // corrupted settings, start fresh
-    }
-  }
-
-  if (!settings.hooks) settings.hooks = {}
-
-  const hookConfig = {
-    SessionStart: {
-      file: 'promptline-session-register.sh',
-    },
-    Stop: {
-      file: 'promptline-prompt-queue.sh',
-    },
-    SessionEnd: {
-      file: 'promptline-session-end.sh',
-    },
-  }
-
-  for (const [event, config] of Object.entries(hookConfig)) {
-    const command = `~/.claude/hooks/${config.file}`
-
-    if (!settings.hooks[event]) settings.hooks[event] = []
-
-    const alreadyExists = settings.hooks[event].some(entry =>
-      entry.hooks?.some(h => h.command === command)
-    )
-
-    if (!alreadyExists) {
-      settings.hooks[event].push({
-        hooks: [{ type: 'command', command }],
-      })
-    }
-  }
-
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n')
 }
