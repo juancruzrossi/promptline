@@ -1,6 +1,6 @@
 {
   "name": "@jxtools/promptline",
-  "version": "1.3.20",
+  "version": "1.3.21",
   "type": "module",
   "license": "ISC",
   "bin": {
@@ -8,6 +8,7 @@
   },
   "files": [
     "bin/",
+    "scripts/",
     "src/",
     "promptline-*.sh",
     "vite-plugin-api.ts",
@@ -26,6 +27,7 @@
     "access": "public"
   },
   "scripts": {
+    "postinstall": "node scripts/postinstall.js",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

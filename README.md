@@ -10,6 +10,12 @@ Ever been watching Claude Code work and thought of three more things you need it
 npm install -g @jxtools/promptline
 ```
 
+If your environment requires an explicit npm registry:
+
+```bash
+npm install -g @jxtools/promptline --registry https://registry.npmjs.org/
+```
+
 ## Usage
 
 ```bash
