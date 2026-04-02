@@ -46,14 +46,18 @@ extract_session_name() {
     content_str=$(echo "$line" | jq -r 'if .message.content | type == "string" then .message.content else empty end' 2>/dev/null) || true
     if [ -n "$content_str" ]; then
       text=$(echo "$content_str" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      [ -n "$text" ] && break
+      # Skip system-injected messages (XML tags like <system-reminder>, <local-command-caveat>, etc.)
+      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
+      break
     fi
 
     local content_text
     content_text=$(echo "$line" | jq -r 'if .message.content | type == "array" then (.message.content[] | select(.type == "text") | .text) else empty end' 2>/dev/null | head -1) || true
     if [ -n "$content_text" ]; then
       text=$(echo "$content_text" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      [ -n "$text" ] && break
+      # Skip system-injected messages (XML tags like <system-reminder>, <local-command-caveat>, etc.)
+      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
+      break
     fi
   done < "$transcript"
 
