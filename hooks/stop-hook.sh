@@ -71,12 +71,19 @@ extract_session_name() {
 
 # --- Lock acquisition (O_EXCL pattern, 3s timeout, 10s stale) ---
 LOCK_FILE="${QUEUE_FILE}.lock"
-trap 'rm -f "$LOCK_FILE"' EXIT
+LOCK_HELD=0
+cleanup_lock() {
+  if [ "$LOCK_HELD" -eq 1 ]; then
+    rm -f "$LOCK_FILE"
+  fi
+}
+trap cleanup_lock EXIT
 
 acquire_lock() {
   local deadline=$((SECONDS + 3))
   while true; do
     if (set -C; echo $$ > "$LOCK_FILE") 2>/dev/null; then
+      LOCK_HELD=1
       return 0
     fi
     # Check for stale lock (mtime > 10s ago)
@@ -91,13 +98,14 @@ acquire_lock() {
       fi
     fi
     if [ "$SECONDS" -ge "$deadline" ]; then
-      return 0
+      return 1
     fi
     sleep 0.01
   done
 }
 
-acquire_lock
+# If another process is already draining this queue, skip this stop event.
+acquire_lock || exit 0
 
 # --- If session file doesn't exist, create empty and exit ---
 if [ ! -f "$QUEUE_FILE" ]; then

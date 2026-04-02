@@ -11,6 +11,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -45,6 +46,21 @@ const HOOK_FILES = {
 
 export function toErrorMessage(error, fallback = 'Unknown error') {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+function hasCommand(command, args = ['--version']) {
+  const result = spawnSync(command, args, { stdio: 'ignore' })
+  return !result.error && result.status === 0
+}
+
+function validateHookRuntime() {
+  const missing = []
+  if (!hasCommand('bash', ['--version'])) missing.push('bash')
+  if (!hasCommand('jq')) missing.push('jq')
+
+  if (missing.length > 0) {
+    throw new Error(`Missing runtime dependency: ${missing.join(', ')}`)
+  }
 }
 
 function sleepMs(ms) {
@@ -206,6 +222,8 @@ function buildHookEntry(shPath) {
 // ── Claude install / uninstall ─────────────────────────────────────────────────
 
 export function installClaude() {
+  validateHookRuntime()
+
   if (!existsSync(CLAUDE_DIR)) {
     throw new Error(`Claude directory not found: ${CLAUDE_DIR}`)
   }
@@ -340,6 +358,8 @@ export function uninstallClaude() {
 // ── Codex install / uninstall ──────────────────────────────────────────────────
 
 export function installCodex() {
+  validateHookRuntime()
+
   const hookPaths = resolveHookPaths()
   const needed = ['SessionStart', 'Stop']
   const missing = needed.filter((k) => !hookPaths[k].exists)
