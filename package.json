@@ -8,9 +8,9 @@
   },
   "files": [
     "bin/",
+    "hooks/",
     "scripts/",
     "src/",
-    "promptline-*.sh",
     "vite-plugin-api.ts",
     "vite.config.ts",
     "tsconfig.json",
