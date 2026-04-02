@@ -12,7 +12,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -49,15 +48,7 @@ export function toErrorMessage(error, fallback = 'Unknown error') {
 }
 
 function sleepMs(ms) {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    try {
-      execFileSync('sleep', [String(ms / 1000)], { stdio: 'ignore' })
-      break
-    } catch {
-      break
-    }
-  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
 // ── File locking ───────────────────────────────────────────────────────────────
@@ -471,43 +462,49 @@ export function uninstallCodex() {
 
 // ── Status ─────────────────────────────────────────────────────────────────────
 
+function extractScriptPath(command) {
+  const match = command?.match(/"([^"]+)"/)
+  return match ? match[1] : null
+}
+
+function getAgentStatus(settingsPath) {
+  try {
+    if (!existsSync(settingsPath)) return null
+
+    const settings = readJsonSafe(settingsPath)
+    if (!settings.hooks) return { installed: false, events: [], pathsValid: true }
+
+    const events = []
+    const scriptPaths = []
+
+    for (const [event, arr] of Object.entries(settings.hooks)) {
+      if (!Array.isArray(arr)) continue
+      for (const entry of arr) {
+        if (!isPromptLineEntry(entry)) continue
+        events.push(event)
+        for (const h of entry.hooks || []) {
+          const sp = extractScriptPath(h.command)
+          if (sp) scriptPaths.push(sp)
+        }
+      }
+    }
+
+    const installed = events.length > 0
+    const pathsValid = installed ? scriptPaths.every((p) => existsSync(p)) : true
+
+    return { installed, events, pathsValid }
+  } catch {
+    return null
+  }
+}
+
 export function getStatus() {
   const hookPaths = resolveHookPaths()
-  const hooksExist = Object.values(hookPaths).every((v) => v.exists)
-
-  let claudeInstalled = false
-  try {
-    if (existsSync(CLAUDE_SETTINGS)) {
-      const settings = readJsonSafe(CLAUDE_SETTINGS)
-      if (settings.hooks) {
-        claudeInstalled = Object.values(settings.hooks).some(
-          (arr) => Array.isArray(arr) && arr.some(isPromptLineEntry),
-        )
-      }
-    }
-  } catch {
-    // corrupted settings — not installed
-  }
-
-  let codexInstalled = false
-  try {
-    if (existsSync(CODEX_SETTINGS)) {
-      const settings = readJsonSafe(CODEX_SETTINGS)
-      if (settings.hooks) {
-        codexInstalled = Object.values(settings.hooks).some(
-          (arr) => Array.isArray(arr) && arr.some(isPromptLineEntry),
-        )
-      }
-    }
-  } catch {
-    // corrupted settings — not installed
-  }
 
   return {
     hookPaths,
-    hooksExist,
-    claude: { installed: claudeInstalled, settingsPath: CLAUDE_SETTINGS },
-    codex: { installed: codexInstalled, settingsPath: CODEX_SETTINGS },
+    claude: getAgentStatus(CLAUDE_SETTINGS),
+    codex: getAgentStatus(CODEX_SETTINGS),
   }
 }
 
