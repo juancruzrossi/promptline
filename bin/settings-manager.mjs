@@ -177,18 +177,23 @@ export function resolveHookPaths() {
 // ── Hook entry helpers ─────────────────────────────────────────────────────────
 
 function makeHookCommand(shPath) {
-  return `bash "${shPath}"`
+  if (shPath.includes(HOOK_MARKER)) return `bash "${shPath}"`
+  return `bash "${shPath}" #@jxtools/promptline`
 }
 
 function isPromptLineEntry(entry) {
-  return entry.hooks?.some((h) => h.command?.includes(HOOK_MARKER))
+  return entry.hooks?.some(
+    (h) =>
+      h.command?.includes(HOOK_MARKER) || h.command?.includes(HOOKS_DIR + '/'),
+  )
 }
 
 function isLegacyEntry(entry) {
   return entry.hooks?.some(
     (h) =>
       h.command?.includes(LEGACY_MARKER) &&
-      !h.command?.includes(HOOK_MARKER),
+      !h.command?.includes(HOOK_MARKER) &&
+      !h.command?.includes(HOOKS_DIR + '/'),
   )
 }
 
