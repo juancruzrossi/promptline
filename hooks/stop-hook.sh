@@ -12,7 +12,7 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 
-if [ -z "$CWD" ]; then
+if [ -z "$CWD" ] || [ -z "$SESSION_ID" ]; then
   exit 0
 fi
 
@@ -82,14 +82,15 @@ acquire_lock() {
     # Check for stale lock (mtime > 10s ago)
     if [ -f "$LOCK_FILE" ]; then
       local lock_age
-      lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || echo "0") ))
+      local lock_mtime
+      lock_mtime=$(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo "0")
+      lock_age=$(( $(date +%s) - lock_mtime ))
       if [ "$lock_age" -gt 10 ]; then
         rm -f "$LOCK_FILE"
         continue
       fi
     fi
     if [ "$SECONDS" -ge "$deadline" ]; then
-      rm -f "$LOCK_FILE"
       return 0
     fi
     sleep 0.01
