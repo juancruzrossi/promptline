@@ -36,9 +36,9 @@ const PKG_DIR = resolve(__dirname, '..')
 const HOOKS_DIR = join(PKG_DIR, 'hooks')
 
 const HOOK_FILES = {
-  SessionStart: 'session-start-hook.sh',
+  SessionStart: 'session-start.sh',
   Stop: 'stop-hook.sh',
-  SessionEnd: 'session-end-hook.sh',
+  SessionEnd: 'session-end.sh',
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -99,7 +99,11 @@ function releaseLock(lockPath) {
 function readJsonSafe(filePath) {
   if (!existsSync(filePath)) return {}
   const raw = readFileSync(filePath, 'utf-8')
-  return JSON.parse(raw)
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new Error(`File is not valid JSON: ${filePath}`)
+  }
 }
 
 function createBackup(filePath) {
