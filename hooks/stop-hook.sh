@@ -73,6 +73,43 @@ extract_session_name() {
   fi
 }
 
+# Extract session name from Codex SQLite DB (fallback when no transcript)
+extract_codex_session_name() {
+  local sid="$1"
+  [ -z "$sid" ] && echo "null" && return
+
+  # Validate UUID format to prevent injection
+  [[ "$sid" =~ ^[0-9a-fA-F-]+$ ]] || { echo "null"; return; }
+
+  command -v sqlite3 >/dev/null 2>&1 || { echo "null"; return; }
+
+  # Find latest Codex state DB
+  local db=""
+  for f in "$HOME/.codex"/state_*.sqlite; do
+    [ -f "$f" ] && db="$f"
+  done
+  [ -z "$db" ] && echo "null" && return
+
+  local title
+  title=$(sqlite3 "$db" "SELECT title FROM threads WHERE id='$sid' LIMIT 1;" 2>/dev/null) || true
+
+  if [ -z "$title" ]; then
+    echo "null"
+    return
+  fi
+
+  local text
+  text=$(echo "$title" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+
+  if [ -z "$text" ]; then
+    echo "null"
+  elif [ "${#text}" -gt 50 ]; then
+    echo "\"${text:0:50}...\""
+  else
+    printf '%s' "$text" | jq -Rs '.'
+  fi
+}
+
 # --- Lock acquisition (O_EXCL pattern, 3s timeout, 10s stale) ---
 LOCK_FILE="${QUEUE_FILE}.lock"
 LOCK_HELD=0
@@ -115,6 +152,7 @@ acquire_lock || exit 0
 if [ ! -f "$QUEUE_FILE" ]; then
   NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
   SESSION_NAME_JSON=$(extract_session_name "$TRANSCRIPT_PATH")
+  [ "$SESSION_NAME_JSON" = "null" ] && SESSION_NAME_JSON=$(extract_codex_session_name "$SESSION_ID")
   TMP_FILE="${QUEUE_FILE}.tmp.$$"
   jq -n \
     --arg sessionId "$SESSION_ID" \
@@ -144,6 +182,7 @@ fi
 # --- Read and process session ---
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 SESSION_NAME_JSON=$(extract_session_name "$TRANSCRIPT_PATH")
+[ "$SESSION_NAME_JSON" = "null" ] && SESSION_NAME_JSON=$(extract_codex_session_name "$SESSION_ID")
 
 RESULT=$(jq \
   --arg now "$NOW" \

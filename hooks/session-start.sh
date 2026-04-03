@@ -79,6 +79,43 @@ extract_session_name() {
   fi
 }
 
+# Extract session name from Codex SQLite DB (fallback when no transcript)
+extract_codex_session_name() {
+  local sid="$1"
+  [ -z "$sid" ] && echo "null" && return
+
+  # Validate UUID format to prevent injection
+  [[ "$sid" =~ ^[0-9a-fA-F-]+$ ]] || { echo "null"; return; }
+
+  command -v sqlite3 >/dev/null 2>&1 || { echo "null"; return; }
+
+  # Find latest Codex state DB
+  local db=""
+  for f in "$HOME/.codex"/state_*.sqlite; do
+    [ -f "$f" ] && db="$f"
+  done
+  [ -z "$db" ] && echo "null" && return
+
+  local title
+  title=$(sqlite3 "$db" "SELECT title FROM threads WHERE id='$sid' LIMIT 1;" 2>/dev/null) || true
+
+  if [ -z "$title" ]; then
+    echo "null"
+    return
+  fi
+
+  local text
+  text=$(echo "$title" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+
+  if [ -z "$text" ]; then
+    echo "null"
+  elif [ "${#text}" -gt 50 ]; then
+    echo "\"${text:0:50}...\""
+  else
+    printf '%s' "$text" | jq -Rs '.'
+  fi
+}
+
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
 # Build owner_pid JSON value
@@ -99,6 +136,7 @@ TMP_FILE="${QUEUE_FILE}.tmp.$$"
 
 if [ -f "$QUEUE_FILE" ]; then
   SESSION_NAME_JSON=$(extract_session_name "$TRANSCRIPT_PATH")
+  [ "$SESSION_NAME_JSON" = "null" ] && SESSION_NAME_JSON=$(extract_codex_session_name "$SESSION_ID")
 
   UPDATED=$(jq \
     --arg now "$NOW" \
@@ -117,6 +155,7 @@ if [ -f "$QUEUE_FILE" ]; then
   mv -f "$TMP_FILE" "$QUEUE_FILE"
 else
   SESSION_NAME_JSON=$(extract_session_name "$TRANSCRIPT_PATH")
+  [ "$SESSION_NAME_JSON" = "null" ] && SESSION_NAME_JSON=$(extract_codex_session_name "$SESSION_ID")
 
   jq -n \
     --arg sessionId "$SESSION_ID" \
