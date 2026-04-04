@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, openSync, closeSync, statSync, unlinkSync } from 'fs'
 import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { spawn, execFileSync } from 'child_process'
@@ -97,6 +97,33 @@ function ask(question) {
   })
 }
 
+function acquireFileLock(lockPath, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const fd = openSync(lockPath, 'wx')
+      writeFileSync(fd, String(process.pid))
+      closeSync(fd)
+      return true
+    } catch (err) {
+      if (err.code !== 'EEXIST') return false
+      try {
+        const stat = statSync(lockPath)
+        if (Date.now() - stat.mtimeMs > 10_000) {
+          try { unlinkSync(lockPath) } catch { /* ignore */ }
+          continue
+        }
+      } catch { continue }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+    }
+  }
+  return false
+}
+
+function releaseFileLock(lockPath) {
+  try { unlinkSync(lockPath) } catch { /* ignore */ }
+}
+
 function cancelAllPendingPrompts() {
   const queuesDir = join(homedir(), '.promptline', 'queues')
   let projectDirs
@@ -118,6 +145,8 @@ function cancelAllPendingPrompts() {
 
     for (const file of files) {
       const filePath = join(projectPath, file)
+      const lockPath = `${filePath}.lock`
+      if (!acquireFileLock(lockPath, 1000)) continue
       try {
         const data = JSON.parse(readFileSync(filePath, 'utf-8'))
         if (data.closedAt) continue
@@ -137,6 +166,8 @@ function cancelAllPendingPrompts() {
         }
       } catch {
         continue
+      } finally {
+        releaseFileLock(lockPath)
       }
     }
   }

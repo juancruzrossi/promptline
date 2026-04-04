@@ -6,6 +6,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
 INPUT=$(cat)
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
@@ -16,99 +20,7 @@ if [ -z "$CWD" ] || [ -z "$SESSION_ID" ]; then
   exit 0
 fi
 
-QUEUES_BASE="$HOME/.promptline/queues"
-EXISTING=$(find "$QUEUES_BASE" -maxdepth 2 -name "${SESSION_ID}.json" -print -quit 2>/dev/null || true)
-
-if [ -n "$EXISTING" ]; then
-  QUEUE_FILE="$EXISTING"
-  QUEUE_DIR="$(dirname "$EXISTING")"
-  PROJECT=$(basename "$QUEUE_DIR")
-else
-  PROJECT=$(basename "$CWD")
-  QUEUE_DIR="$QUEUES_BASE/$PROJECT"
-  QUEUE_FILE="$QUEUE_DIR/$SESSION_ID.json"
-  mkdir -p "$QUEUE_DIR"
-fi
-
-# Extract session name from transcript JSONL (first user message, max 50 chars)
-extract_session_name() {
-  local transcript="$1"
-  [ -z "$transcript" ] || [ ! -f "$transcript" ] && echo "null" && return
-
-  local text=""
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -z "$line" ] && continue
-    local entry_type
-    entry_type=$(echo "$line" | jq -r '.type // empty' 2>/dev/null) || continue
-    [ "$entry_type" != "user" ] && continue
-
-    local content_str
-    content_str=$(echo "$line" | jq -r 'if .message.content | type == "string" then .message.content else empty end' 2>/dev/null) || true
-    if [ -n "$content_str" ]; then
-      text=$(echo "$content_str" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      # Skip system-injected messages (XML tags like <system-reminder>, <local-command-caveat>, etc.)
-      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
-      break
-    fi
-
-    local content_text
-    content_text=$(echo "$line" | jq -r 'if .message.content | type == "array" then (.message.content[] | select(.type == "text") | .text) else empty end' 2>/dev/null | head -1) || true
-    if [ -n "$content_text" ]; then
-      text=$(echo "$content_text" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      # Skip system-injected messages (XML tags like <system-reminder>, <local-command-caveat>, etc.)
-      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
-      break
-    fi
-  done < "$transcript"
-
-  if [ -z "$text" ]; then
-    echo "null"
-    return
-  fi
-
-  if [ "${#text}" -gt 50 ]; then
-    echo "\"${text:0:50}...\""
-  else
-    printf '%s' "$text" | jq -Rs '.'
-  fi
-}
-
-# Extract session name from Codex SQLite DB (fallback when no transcript)
-extract_codex_session_name() {
-  local sid="$1"
-  [ -z "$sid" ] && echo "null" && return
-
-  # Validate UUID format to prevent injection
-  [[ "$sid" =~ ^[0-9a-fA-F-]+$ ]] || { echo "null"; return; }
-
-  command -v sqlite3 >/dev/null 2>&1 || { echo "null"; return; }
-
-  # Find latest Codex state DB
-  local db=""
-  for f in "$HOME/.codex"/state_*.sqlite; do
-    [ -f "$f" ] && db="$f"
-  done
-  [ -z "$db" ] && echo "null" && return
-
-  local title
-  title=$(sqlite3 "$db" "SELECT title FROM threads WHERE id='$sid' LIMIT 1;" 2>/dev/null) || true
-
-  if [ -z "$title" ]; then
-    echo "null"
-    return
-  fi
-
-  local text
-  text=$(echo "$title" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-
-  if [ -z "$text" ]; then
-    echo "null"
-  elif [ "${#text}" -gt 50 ]; then
-    echo "\"${text:0:50}...\""
-  else
-    printf '%s' "$text" | jq -Rs '.'
-  fi
-}
+resolve_session_paths "$SESSION_ID" "$CWD"
 
 # --- Lock acquisition (O_EXCL pattern, 3s timeout, 10s stale) ---
 LOCK_FILE="${QUEUE_FILE}.lock"
@@ -127,7 +39,6 @@ acquire_lock() {
       LOCK_HELD=1
       return 0
     fi
-    # Check for stale lock (mtime > 10s ago)
     if [ -f "$LOCK_FILE" ]; then
       local lock_age
       local lock_mtime
