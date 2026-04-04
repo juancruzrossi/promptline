@@ -42,6 +42,25 @@ const HOOK_FILES = {
   SessionEnd: 'session-end.sh',
 }
 
+// ── Agent configs ─────────────────────────────────────────────────────────────
+
+const AGENT_CONFIGS = {
+  claude: {
+    label: 'Claude',
+    dir: CLAUDE_DIR,
+    settingsPath: CLAUDE_SETTINGS,
+    events: Object.keys(HOOK_FILES),
+    requireDir: true,
+  },
+  codex: {
+    label: 'Codex',
+    dir: CODEX_DIR,
+    settingsPath: CODEX_SETTINGS,
+    events: ['SessionStart', 'Stop'],
+    requireDir: false,
+  },
+}
+
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
 export function toErrorMessage(error, fallback = 'Unknown error') {
@@ -219,40 +238,42 @@ function buildHookEntry(shPath) {
   }
 }
 
-// ── Claude install / uninstall ─────────────────────────────────────────────────
+// ── Generic install / uninstall ───────────────────────────────────────────────
 
-export function installClaude() {
+function installAgent(agentKey) {
+  const config = AGENT_CONFIGS[agentKey]
   validateHookRuntime()
 
-  if (!existsSync(CLAUDE_DIR)) {
-    throw new Error(`Claude directory not found: ${CLAUDE_DIR}`)
+  if (config.requireDir && !existsSync(config.dir)) {
+    throw new Error(`${config.label} directory not found: ${config.dir}`)
   }
 
   const hookPaths = resolveHookPaths()
-  const missing = Object.entries(hookPaths)
-    .filter(([, v]) => !v.exists)
-    .map(([k]) => k)
+  const missing = config.events.filter((k) => !hookPaths[k].exists)
   if (missing.length > 0) {
     throw new Error(`Hook scripts missing: ${missing.join(', ')}. Run install after hooks are created.`)
   }
 
-  const lockPath = `${CLAUDE_SETTINGS}.lock`
+  if (!config.requireDir) {
+    mkdirSync(config.dir, { recursive: true })
+  }
+
+  const lockPath = `${config.settingsPath}.lock`
   acquireLock(lockPath)
 
   let backupPath = null
   try {
     let settings
     try {
-      settings = readJsonSafe(CLAUDE_SETTINGS)
+      settings = readJsonSafe(config.settingsPath)
     } catch (err) {
-      throw new Error(`Claude settings file is corrupted: ${toErrorMessage(err)}`)
+      throw new Error(`${config.label} settings file is corrupted: ${toErrorMessage(err)}`)
     }
 
-    backupPath = createBackup(CLAUDE_SETTINGS)
+    backupPath = createBackup(config.settingsPath)
 
     if (!settings.hooks) settings.hooks = {}
 
-    // Remove legacy entries
     for (const event of Object.keys(settings.hooks)) {
       if (Array.isArray(settings.hooks[event])) {
         settings.hooks[event] = settings.hooks[event].filter(
@@ -261,9 +282,8 @@ export function installClaude() {
       }
     }
 
-    // Add/update PromptLine entries
-    for (const [event, file] of Object.entries(HOOK_FILES)) {
-      const shPath = join(HOOKS_DIR, file)
+    for (const event of config.events) {
+      const shPath = join(HOOKS_DIR, HOOK_FILES[event])
       if (!settings.hooks[event]) settings.hooks[event] = []
 
       const idx = settings.hooks[event].findIndex((e) => isPromptLineEntry(e))
@@ -276,217 +296,103 @@ export function installClaude() {
       }
     }
 
-    mkdirSync(dirname(CLAUDE_SETTINGS), { recursive: true })
-    writeJsonAtomic(CLAUDE_SETTINGS, settings)
+    mkdirSync(dirname(config.settingsPath), { recursive: true })
+    writeJsonAtomic(config.settingsPath, settings)
 
     try {
-      validateWritten(CLAUDE_SETTINGS)
+      validateWritten(config.settingsPath)
     } catch {
-      restoreBackup(CLAUDE_SETTINGS, backupPath)
+      restoreBackup(config.settingsPath, backupPath)
       throw new Error('Post-write validation failed, backup restored')
     }
 
-    cleanOldBackups(CLAUDE_SETTINGS)
+    cleanOldBackups(config.settingsPath)
 
-    return { installed: true, message: 'Claude hooks installed successfully' }
+    return { installed: true, message: `${config.label} hooks installed successfully` }
   } finally {
     releaseLock(lockPath)
   }
+}
+
+function uninstallAgent(agentKey) {
+  const config = AGENT_CONFIGS[agentKey]
+
+  if (!existsSync(config.settingsPath)) {
+    return { removed: false, message: `No ${config.label} settings file found` }
+  }
+
+  const lockPath = `${config.settingsPath}.lock`
+  acquireLock(lockPath)
+
+  let backupPath = null
+  try {
+    let settings
+    try {
+      settings = readJsonSafe(config.settingsPath)
+    } catch (err) {
+      throw new Error(`${config.label} settings file is corrupted: ${toErrorMessage(err)}`)
+    }
+
+    if (!settings.hooks) {
+      return { removed: false, message: `No hooks configured in ${config.label}` }
+    }
+
+    backupPath = createBackup(config.settingsPath)
+
+    let removed = false
+    for (const event of Object.keys(settings.hooks)) {
+      if (!Array.isArray(settings.hooks[event])) continue
+      const before = settings.hooks[event].length
+      settings.hooks[event] = settings.hooks[event].filter(
+        (entry) => !isPromptLineEntry(entry),
+      )
+      if (settings.hooks[event].length < before) removed = true
+      if (settings.hooks[event].length === 0) {
+        delete settings.hooks[event]
+      }
+    }
+
+    if (Object.keys(settings.hooks).length === 0) {
+      delete settings.hooks
+    }
+
+    if (!removed) {
+      return { removed: false, message: `No PromptLine hooks found in ${config.label} settings` }
+    }
+
+    writeJsonAtomic(config.settingsPath, settings)
+
+    try {
+      validateWritten(config.settingsPath)
+    } catch {
+      restoreBackup(config.settingsPath, backupPath)
+      throw new Error('Post-write validation failed, backup restored')
+    }
+
+    cleanOldBackups(config.settingsPath)
+
+    return { removed: true, message: `PromptLine hooks removed from ${config.label} settings` }
+  } finally {
+    releaseLock(lockPath)
+  }
+}
+
+// ── Public API (preserves existing signatures) ────────────────────────────────
+
+export function installClaude() {
+  return installAgent('claude')
 }
 
 export function uninstallClaude() {
-  if (!existsSync(CLAUDE_SETTINGS)) {
-    return { removed: false, message: 'No Claude settings file found' }
-  }
-
-  const lockPath = `${CLAUDE_SETTINGS}.lock`
-  acquireLock(lockPath)
-
-  let backupPath = null
-  try {
-    let settings
-    try {
-      settings = readJsonSafe(CLAUDE_SETTINGS)
-    } catch (err) {
-      throw new Error(`Claude settings file is corrupted: ${toErrorMessage(err)}`)
-    }
-
-    if (!settings.hooks) {
-      return { removed: false, message: 'No hooks configured in Claude settings' }
-    }
-
-    backupPath = createBackup(CLAUDE_SETTINGS)
-
-    let removed = false
-    for (const event of Object.keys(settings.hooks)) {
-      if (!Array.isArray(settings.hooks[event])) continue
-      const before = settings.hooks[event].length
-      settings.hooks[event] = settings.hooks[event].filter(
-        (entry) => !isPromptLineEntry(entry),
-      )
-      if (settings.hooks[event].length < before) removed = true
-      if (settings.hooks[event].length === 0) {
-        delete settings.hooks[event]
-      }
-    }
-
-    if (Object.keys(settings.hooks).length === 0) {
-      delete settings.hooks
-    }
-
-    if (!removed) {
-      return { removed: false, message: 'No PromptLine hooks found in Claude settings' }
-    }
-
-    writeJsonAtomic(CLAUDE_SETTINGS, settings)
-
-    try {
-      validateWritten(CLAUDE_SETTINGS)
-    } catch {
-      restoreBackup(CLAUDE_SETTINGS, backupPath)
-      throw new Error('Post-write validation failed, backup restored')
-    }
-
-    cleanOldBackups(CLAUDE_SETTINGS)
-
-    return { removed: true, message: 'PromptLine hooks removed from Claude settings' }
-  } finally {
-    releaseLock(lockPath)
-  }
+  return uninstallAgent('claude')
 }
 
-// ── Codex install / uninstall ──────────────────────────────────────────────────
-
 export function installCodex() {
-  validateHookRuntime()
-
-  const hookPaths = resolveHookPaths()
-  const needed = ['SessionStart', 'Stop']
-  const missing = needed.filter((k) => !hookPaths[k].exists)
-  if (missing.length > 0) {
-    throw new Error(`Hook scripts missing: ${missing.join(', ')}. Run install after hooks are created.`)
-  }
-
-  mkdirSync(CODEX_DIR, { recursive: true })
-
-  const lockPath = `${CODEX_SETTINGS}.lock`
-  acquireLock(lockPath)
-
-  let backupPath = null
-  try {
-    let settings
-    try {
-      settings = readJsonSafe(CODEX_SETTINGS)
-    } catch (err) {
-      throw new Error(`Codex hooks file is corrupted: ${toErrorMessage(err)}`)
-    }
-
-    backupPath = createBackup(CODEX_SETTINGS)
-
-    if (!settings.hooks) settings.hooks = {}
-
-    // Remove legacy entries
-    for (const event of Object.keys(settings.hooks)) {
-      if (Array.isArray(settings.hooks[event])) {
-        settings.hooks[event] = settings.hooks[event].filter(
-          (entry) => !isLegacyEntry(entry),
-        )
-      }
-    }
-
-    // Only SessionStart and Stop for Codex (no SessionEnd)
-    const codexHooks = { SessionStart: HOOK_FILES.SessionStart, Stop: HOOK_FILES.Stop }
-
-    for (const [event, file] of Object.entries(codexHooks)) {
-      const shPath = join(HOOKS_DIR, file)
-      if (!settings.hooks[event]) settings.hooks[event] = []
-
-      const idx = settings.hooks[event].findIndex((e) => isPromptLineEntry(e))
-      const entry = buildHookEntry(shPath)
-
-      if (idx >= 0) {
-        settings.hooks[event][idx] = entry
-      } else {
-        settings.hooks[event].push(entry)
-      }
-    }
-
-    writeJsonAtomic(CODEX_SETTINGS, settings)
-
-    try {
-      validateWritten(CODEX_SETTINGS)
-    } catch {
-      restoreBackup(CODEX_SETTINGS, backupPath)
-      throw new Error('Post-write validation failed, backup restored')
-    }
-
-    cleanOldBackups(CODEX_SETTINGS)
-
-    return { installed: true, message: 'Codex hooks installed successfully' }
-  } finally {
-    releaseLock(lockPath)
-  }
+  return installAgent('codex')
 }
 
 export function uninstallCodex() {
-  if (!existsSync(CODEX_SETTINGS)) {
-    return { removed: false, message: 'No Codex hooks file found' }
-  }
-
-  const lockPath = `${CODEX_SETTINGS}.lock`
-  acquireLock(lockPath)
-
-  let backupPath = null
-  try {
-    let settings
-    try {
-      settings = readJsonSafe(CODEX_SETTINGS)
-    } catch (err) {
-      throw new Error(`Codex hooks file is corrupted: ${toErrorMessage(err)}`)
-    }
-
-    if (!settings.hooks) {
-      return { removed: false, message: 'No hooks configured in Codex' }
-    }
-
-    backupPath = createBackup(CODEX_SETTINGS)
-
-    let removed = false
-    for (const event of Object.keys(settings.hooks)) {
-      if (!Array.isArray(settings.hooks[event])) continue
-      const before = settings.hooks[event].length
-      settings.hooks[event] = settings.hooks[event].filter(
-        (entry) => !isPromptLineEntry(entry),
-      )
-      if (settings.hooks[event].length < before) removed = true
-      if (settings.hooks[event].length === 0) {
-        delete settings.hooks[event]
-      }
-    }
-
-    if (Object.keys(settings.hooks).length === 0) {
-      delete settings.hooks
-    }
-
-    if (!removed) {
-      return { removed: false, message: 'No PromptLine hooks found in Codex' }
-    }
-
-    writeJsonAtomic(CODEX_SETTINGS, settings)
-
-    try {
-      validateWritten(CODEX_SETTINGS)
-    } catch {
-      restoreBackup(CODEX_SETTINGS, backupPath)
-      throw new Error('Post-write validation failed, backup restored')
-    }
-
-    cleanOldBackups(CODEX_SETTINGS)
-
-    return { removed: true, message: 'PromptLine hooks removed from Codex' }
-  } finally {
-    releaseLock(lockPath)
-  }
+  return uninstallAgent('codex')
 }
 
 // ── Status ─────────────────────────────────────────────────────────────────────

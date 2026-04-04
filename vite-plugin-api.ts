@@ -23,6 +23,7 @@ import {
 } from './src/backend/queue-store.ts';
 
 const QUEUES_DIR = join(homedir(), '.promptline', 'queues');
+const MAX_BODY_BYTES = 1_000_000;
 
 export function isSafeSegment(s: string): boolean {
   return s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
@@ -31,7 +32,14 @@ export function isSafeSegment(s: string): boolean {
 function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let bytes = 0;
     req.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > MAX_BODY_BYTES) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
       body += chunk.toString();
     });
     req.on('end', () => {
@@ -102,7 +110,6 @@ function handleSSE(_req: IncomingMessage, res: ServerResponse): void {
     'Connection': 'keep-alive',
   });
 
-  // Send initial state
   const data = JSON.stringify(listProjects(QUEUES_DIR));
   res.write(`event: projects\ndata: ${data}\n\n`);
 
@@ -117,6 +124,226 @@ function handleSSE(_req: IncomingMessage, res: ServerResponse): void {
     sseClients.delete(res);
   });
 }
+
+// --- Route helpers ---
+
+interface RouteParams {
+  project: string;
+  sessionId: string;
+  promptId: string;
+}
+
+type RouteHandler = (params: RouteParams, req: IncomingMessage, res: ServerResponse) => Promise<void> | void;
+
+interface Route {
+  method: string;
+  pattern: string[];
+  handler: RouteHandler;
+}
+
+function matchRoute(
+  segments: string[],
+  method: string,
+  routes: Route[],
+): { handler: RouteHandler; params: RouteParams } | null {
+  for (const route of routes) {
+    if (route.method !== method) continue;
+    if (route.pattern.length !== segments.length) continue;
+
+    const params: Record<string, string> = {};
+    let matched = true;
+
+    for (let i = 0; i < route.pattern.length; i++) {
+      if (route.pattern[i].startsWith(':')) {
+        params[route.pattern[i].slice(1)] = segments[i];
+      } else if (route.pattern[i] !== segments[i]) {
+        matched = false;
+        break;
+      }
+    }
+
+    if (matched) {
+      return { handler: route.handler, params: params as unknown as RouteParams };
+    }
+  }
+  return null;
+}
+
+function withSession(
+  params: RouteParams,
+  res: ServerResponse,
+  fn: (session: ReturnType<typeof readSession> & object) => void,
+): void {
+  return withSessionLock(QUEUES_DIR, params.project, params.sessionId, () => {
+    const session = readSession(QUEUES_DIR, params.project, params.sessionId);
+    if (!session) return jsonError(res, 404, 'Session not found');
+    fn(session);
+  });
+}
+
+// --- Route definitions ---
+
+const routes: Route[] = [
+  // GET /api/projects
+  {
+    method: 'GET',
+    pattern: ['projects'],
+    handler: (_params, _req, res) => {
+      json(res, 200, listProjects(QUEUES_DIR));
+    },
+  },
+
+  // GET /api/projects/:project
+  {
+    method: 'GET',
+    pattern: ['projects', ':project'],
+    handler: (params, _req, res) => {
+      const pv = getProject(QUEUES_DIR, params.project);
+      if (!pv) return jsonError(res, 404, `Project "${params.project}" not found`);
+      json(res, 200, pv);
+    },
+  },
+
+  // DELETE /api/projects/:project
+  {
+    method: 'DELETE',
+    pattern: ['projects', ':project'],
+    handler: (params, _req, res) => {
+      try {
+        deleteProject(QUEUES_DIR, params.project);
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          return jsonError(res, 404, `Project "${params.project}" not found`);
+        }
+        throw err;
+      }
+      json(res, 200, { deleted: params.project });
+    },
+  },
+
+  // GET /api/projects/:project/sessions/:sessionId
+  {
+    method: 'GET',
+    pattern: ['projects', ':project', 'sessions', ':sessionId'],
+    handler: (params, _req, res) => {
+      const session = readSession(QUEUES_DIR, params.project, params.sessionId);
+      if (!session) return jsonError(res, 404, 'Session not found');
+      json(res, 200, withComputedStatus(session));
+    },
+  },
+
+  // DELETE /api/projects/:project/sessions/:sessionId
+  {
+    method: 'DELETE',
+    pattern: ['projects', ':project', 'sessions', ':sessionId'],
+    handler: (params, _req, res) => {
+      try {
+        deleteSession(QUEUES_DIR, params.project, params.sessionId);
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          return jsonError(res, 404, 'Session not found');
+        }
+        throw err;
+      }
+      json(res, 200, { deleted: params.sessionId });
+    },
+  },
+
+  // PUT /api/projects/:project/sessions/:sessionId/prompts/reorder
+  {
+    method: 'PUT',
+    pattern: ['projects', ':project', 'sessions', ':sessionId', 'prompts', 'reorder'],
+    handler: async (params, req, res) => {
+      const body = await parseBody(req);
+      const order = body.order as string[] | undefined;
+      if (!Array.isArray(order)) {
+        return jsonError(res, 400, 'Field "order" (string[]) is required');
+      }
+
+      withSession(params, res, (session) => {
+        const error = reorderPrompts(session, order);
+        if (error) return jsonError(res, 400, error);
+        writeSession(QUEUES_DIR, params.project, session);
+        json(res, 200, session);
+      });
+    },
+  },
+
+  // PATCH /api/projects/:project/sessions/:sessionId/prompts/:promptId
+  {
+    method: 'PATCH',
+    pattern: ['projects', ':project', 'sessions', ':sessionId', 'prompts', ':promptId'],
+    handler: async (params, req, res) => {
+      const body = await parseBody(req);
+      const updates: { text?: string; status?: PromptStatus } = {};
+
+      if (body.text !== undefined) {
+        updates.text = body.text as string;
+      }
+      if (body.status !== undefined) {
+        const validStatuses: PromptStatus[] = ['pending', 'running', 'completed', 'cancelled'];
+        if (!validStatuses.includes(body.status as PromptStatus)) {
+          return jsonError(res, 400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+        }
+        updates.status = body.status as PromptStatus;
+      }
+
+      withSession(params, res, (session) => {
+        const updated = updatePrompt(session, params.promptId, updates);
+        if (!updated) return jsonError(res, 404, `Prompt "${params.promptId}" not found`);
+        writeSession(QUEUES_DIR, params.project, session);
+        json(res, 200, updated);
+      });
+    },
+  },
+
+  // DELETE /api/projects/:project/sessions/:sessionId/prompts/:promptId
+  {
+    method: 'DELETE',
+    pattern: ['projects', ':project', 'sessions', ':sessionId', 'prompts', ':promptId'],
+    handler: (params, _req, res) => {
+      withSession(params, res, (session) => {
+        const removed = deletePrompt(session, params.promptId);
+        if (!removed) return jsonError(res, 404, `Prompt "${params.promptId}" not found`);
+        writeSession(QUEUES_DIR, params.project, session);
+        json(res, 200, removed);
+      });
+    },
+  },
+
+  // DELETE /api/projects/:project/sessions/:sessionId/prompts
+  {
+    method: 'DELETE',
+    pattern: ['projects', ':project', 'sessions', ':sessionId', 'prompts'],
+    handler: (params, _req, res) => {
+      withSession(params, res, (session) => {
+        const removed = clearPrompts(session);
+        writeSession(QUEUES_DIR, params.project, session);
+        json(res, 200, { cleared: removed.length });
+      });
+    },
+  },
+
+  // POST /api/projects/:project/sessions/:sessionId/prompts
+  {
+    method: 'POST',
+    pattern: ['projects', ':project', 'sessions', ':sessionId', 'prompts'],
+    handler: async (params, req, res) => {
+      const body = await parseBody(req);
+      if (!body.text || typeof body.text !== 'string') {
+        return jsonError(res, 400, 'Field "text" (string) is required');
+      }
+
+      withSession(params, res, (session) => {
+        const prompt = addPrompt(session, uuidv4(), body.text as string);
+        writeSession(QUEUES_DIR, params.project, session);
+        json(res, 201, prompt);
+      });
+    },
+  },
+];
+
+// --- Plugin ---
 
 export default function apiPlugin(): Plugin {
   return {
@@ -141,209 +368,29 @@ export default function apiPlugin(): Plugin {
           return;
         }
 
-        // SSE endpoint
         if (url === '/api/events' && method === 'GET') {
           handleSSE(req, res);
           return;
         }
 
-        handleApi(url, method, req, res).catch((err: unknown) => {
+        const segments = url.replace(/^\/api\//, '').split('/').map(decodeURIComponent);
+
+        if (!segments.every(isSafeSegment)) {
+          jsonError(res, 400, 'Invalid path segment');
+          return;
+        }
+
+        const match = matchRoute(segments, method, routes);
+        if (!match) {
+          jsonError(res, 404, 'Not found');
+          return;
+        }
+
+        Promise.resolve(match.handler(match.params, req, res)).catch((err: unknown) => {
           const message = err instanceof Error ? err.message : 'Internal server error';
           jsonError(res, 500, message);
         });
       }) as Connect.NextHandleFunction);
     },
   };
-}
-
-async function handleApi(
-  url: string,
-  method: string,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  // Parse URL segments: /api/projects/:project/sessions/:sessionId/prompts/:promptId
-  const segments = url.replace(/^\/api\//, '').split('/').map(decodeURIComponent);
-
-  if (!segments.every(isSafeSegment)) {
-    return jsonError(res, 400, 'Invalid path segment');
-  }
-
-  // GET /api/projects
-  if (segments[0] === 'projects' && segments.length === 1 && method === 'GET') {
-    return json(res, 200, listProjects(QUEUES_DIR));
-  }
-
-  // /api/projects/:project
-  if (segments[0] === 'projects' && segments.length === 2) {
-    const project = segments[1];
-
-    if (method === 'GET') {
-      const pv = getProject(QUEUES_DIR, project);
-      if (!pv) return jsonError(res, 404, `Project "${project}" not found`);
-      return json(res, 200, pv);
-    }
-
-    if (method === 'DELETE') {
-      try {
-        deleteProject(QUEUES_DIR, project);
-      } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          return jsonError(res, 404, `Project "${project}" not found`);
-        }
-        throw err;
-      }
-      return json(res, 200, { deleted: project });
-    }
-
-    return jsonError(res, 405, `Method ${method} not allowed`);
-  }
-
-  // /api/projects/:project/sessions/:sessionId
-  if (segments[0] === 'projects' && segments[2] === 'sessions' && segments.length === 4) {
-    const project = segments[1];
-    const sessionId = segments[3];
-
-    if (method === 'GET') {
-      const session = readSession(QUEUES_DIR, project, sessionId);
-      if (!session) return jsonError(res, 404, 'Session not found');
-      return json(res, 200, withComputedStatus(session));
-    }
-
-    if (method === 'DELETE') {
-      try {
-        deleteSession(QUEUES_DIR, project, sessionId);
-      } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          return jsonError(res, 404, 'Session not found');
-        }
-        throw err;
-      }
-      return json(res, 200, { deleted: sessionId });
-    }
-
-    return jsonError(res, 405, `Method ${method} not allowed`);
-  }
-
-  // /api/projects/:project/sessions/:sessionId/prompts/reorder
-  if (
-    segments[0] === 'projects' && segments[2] === 'sessions' &&
-    segments[4] === 'prompts' && segments[5] === 'reorder' &&
-    segments.length === 6 && method === 'PUT'
-  ) {
-    const project = segments[1];
-    const sessionId = segments[3];
-
-    const body = await parseBody(req);
-    const order = body.order as string[] | undefined;
-    if (!Array.isArray(order)) {
-      return jsonError(res, 400, 'Field "order" (string[]) is required');
-    }
-
-    return withSessionLock(QUEUES_DIR, project, sessionId, () => {
-      const session = readSession(QUEUES_DIR, project, sessionId);
-      if (!session) return jsonError(res, 404, 'Session not found');
-
-      const error = reorderPrompts(session, order);
-      if (error) return jsonError(res, 400, error);
-
-      writeSession(QUEUES_DIR, project, session);
-      return json(res, 200, session);
-    });
-  }
-
-  // /api/projects/:project/sessions/:sessionId/prompts/:promptId
-  if (
-    segments[0] === 'projects' && segments[2] === 'sessions' &&
-    segments[4] === 'prompts' && segments.length === 6
-  ) {
-    const project = segments[1];
-    const sessionId = segments[3];
-    const promptId = segments[5];
-
-    if (method === 'PATCH') {
-      const body = await parseBody(req);
-      const updates: { text?: string; status?: PromptStatus } = {};
-
-      if (body.text !== undefined) {
-        updates.text = body.text as string;
-      }
-      if (body.status !== undefined) {
-        const validStatuses: PromptStatus[] = ['pending', 'running', 'completed', 'cancelled'];
-        if (!validStatuses.includes(body.status as PromptStatus)) {
-          return jsonError(res, 400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`);
-        }
-        updates.status = body.status as PromptStatus;
-      }
-
-      return withSessionLock(QUEUES_DIR, project, sessionId, () => {
-        const session = readSession(QUEUES_DIR, project, sessionId);
-        if (!session) return jsonError(res, 404, 'Session not found');
-
-        const updated = updatePrompt(session, promptId, updates);
-        if (!updated) return jsonError(res, 404, `Prompt "${promptId}" not found`);
-
-        writeSession(QUEUES_DIR, project, session);
-        return json(res, 200, updated);
-      });
-    }
-
-    if (method === 'DELETE') {
-      return withSessionLock(QUEUES_DIR, project, sessionId, () => {
-        const session = readSession(QUEUES_DIR, project, sessionId);
-        if (!session) return jsonError(res, 404, 'Session not found');
-
-        const removed = deletePrompt(session, promptId);
-        if (!removed) return jsonError(res, 404, `Prompt "${promptId}" not found`);
-
-        writeSession(QUEUES_DIR, project, session);
-        return json(res, 200, removed);
-      });
-    }
-
-    return jsonError(res, 405, `Method ${method} not allowed`);
-  }
-
-  // DELETE /api/projects/:project/sessions/:sessionId/prompts
-  if (
-    segments[0] === 'projects' && segments[2] === 'sessions' &&
-    segments[4] === 'prompts' && segments.length === 5 && method === 'DELETE'
-  ) {
-    const project = segments[1];
-    const sessionId = segments[3];
-
-    return withSessionLock(QUEUES_DIR, project, sessionId, () => {
-      const session = readSession(QUEUES_DIR, project, sessionId);
-      if (!session) return jsonError(res, 404, 'Session not found');
-
-      const removed = clearPrompts(session);
-      writeSession(QUEUES_DIR, project, session);
-      return json(res, 200, { cleared: removed.length });
-    });
-  }
-
-  // /api/projects/:project/sessions/:sessionId/prompts
-  if (
-    segments[0] === 'projects' && segments[2] === 'sessions' &&
-    segments[4] === 'prompts' && segments.length === 5 && method === 'POST'
-  ) {
-    const project = segments[1];
-    const sessionId = segments[3];
-
-    const body = await parseBody(req);
-    if (!body.text || typeof body.text !== 'string') {
-      return jsonError(res, 400, 'Field "text" (string) is required');
-    }
-
-    return withSessionLock(QUEUES_DIR, project, sessionId, () => {
-      const session = readSession(QUEUES_DIR, project, sessionId);
-      if (!session) return jsonError(res, 404, 'Session not found');
-
-      const prompt = addPrompt(session, uuidv4(), body.text as string);
-      writeSession(QUEUES_DIR, project, session);
-      return json(res, 201, prompt);
-    });
-  }
-
-  return jsonError(res, 404, 'Not found');
 }
