@@ -26,6 +26,10 @@ fi
 
 resolve_session_paths "$SESSION_ID" "$CWD"
 
+LOCK_FILE="${QUEUE_FILE}.lock"
+pl_lock "$LOCK_FILE" || exit 0
+trap 'pl_unlock "$LOCK_FILE"' EXIT
+
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
 # Build owner_pid JSON value

@@ -2,6 +2,32 @@
 # Shared functions for PromptLine hooks.
 # Sourced by session-start.sh, stop-hook.sh, and session-end.sh.
 
+# Acquire an O_EXCL lock (args: lock_file [timeout_s=3]); steals stale locks, returns 1 on timeout.
+pl_lock() {
+  local lock_file="$1"
+  local deadline=$((SECONDS + ${2:-3}))
+  while true; do
+    if (set -C; echo $$ > "$lock_file") 2>/dev/null; then
+      return 0
+    fi
+    local mtime
+    mtime=$(stat -c %Y "$lock_file" 2>/dev/null || stat -f %m "$lock_file" 2>/dev/null || echo 0)
+    case "$mtime" in ''|*[!0-9]*) mtime=0 ;; esac
+    if [ "$mtime" -gt 0 ] && [ "$(( $(date +%s) - mtime ))" -gt 10 ]; then
+      rm -f "$lock_file"
+      continue
+    fi
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      return 1
+    fi
+    sleep 0.01
+  done
+}
+
+pl_unlock() {
+  rm -f "$1" 2>/dev/null || true
+}
+
 # Locate an existing session file or set up paths for a new one.
 # Sets: QUEUE_FILE, QUEUE_DIR, PROJECT
 resolve_session_paths() {

@@ -22,42 +22,10 @@ fi
 
 resolve_session_paths "$SESSION_ID" "$CWD"
 
-# --- Lock acquisition (O_EXCL pattern, 3s timeout, 10s stale) ---
-LOCK_FILE="${QUEUE_FILE}.lock"
-LOCK_HELD=0
-cleanup_lock() {
-  if [ "$LOCK_HELD" -eq 1 ]; then
-    rm -f "$LOCK_FILE"
-  fi
-}
-trap cleanup_lock EXIT
-
-acquire_lock() {
-  local deadline=$((SECONDS + 3))
-  while true; do
-    if (set -C; echo $$ > "$LOCK_FILE") 2>/dev/null; then
-      LOCK_HELD=1
-      return 0
-    fi
-    if [ -f "$LOCK_FILE" ]; then
-      local lock_age
-      local lock_mtime
-      lock_mtime=$(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo "0")
-      lock_age=$(( $(date +%s) - lock_mtime ))
-      if [ "$lock_age" -gt 10 ]; then
-        rm -f "$LOCK_FILE"
-        continue
-      fi
-    fi
-    if [ "$SECONDS" -ge "$deadline" ]; then
-      return 1
-    fi
-    sleep 0.01
-  done
-}
-
 # If another process is already draining this queue, skip this stop event.
-acquire_lock || exit 0
+LOCK_FILE="${QUEUE_FILE}.lock"
+pl_lock "$LOCK_FILE" || exit 0
+trap 'pl_unlock "$LOCK_FILE"' EXIT
 
 # --- If session file doesn't exist, create empty and exit ---
 if [ ! -f "$QUEUE_FILE" ]; then
