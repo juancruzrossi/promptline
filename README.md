@@ -16,27 +16,19 @@ If your environment requires an explicit npm registry:
 npm install -g @jxtools/promptline --registry https://registry.npmjs.org/
 ```
 
-## Hook setup
-
-Install PromptLine hooks explicitly after installing the package:
-
-```bash
-promptline install
-```
-
-For Codex CLI:
-
-```bash
-promptline install --codex
-```
-
 ## Usage
 
 ```bash
 promptline
 ```
 
-PromptLine validates that hooks are installed and warns if they are missing or outdated before opening the dashboard.
+On first run, PromptLine installs the Claude Code hooks automatically (if missing) and then opens the dashboard.
+
+For Codex CLI, install the hooks explicitly:
+
+```bash
+promptline install --codex
+```
 
 ## Update
 
