@@ -331,9 +331,7 @@ if (command === 'status') {
   } else if (!status.claude.installed) {
     console.log(`  \x1b[33m-\x1b[0m Not installed (run \x1b[36mpromptline install\x1b[0m)`)
   } else {
-    const pathIcon = status.claude.pathsValid ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'
     console.log(`  \x1b[32m✓\x1b[0m Installed (events: ${status.claude.events.join(', ')})`)
-    console.log(`  ${pathIcon} Hook paths ${status.claude.pathsValid ? 'valid' : 'outdated — run promptline install'}`)
   }
 
   console.log()
@@ -343,9 +341,7 @@ if (command === 'status') {
   } else if (!status.codex.installed) {
     console.log(`  \x1b[33m-\x1b[0m Not installed (run \x1b[36mpromptline install --codex\x1b[0m)`)
   } else {
-    const pathIcon = status.codex.pathsValid ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'
     console.log(`  \x1b[32m✓\x1b[0m Installed (events: ${status.codex.events.join(', ')})`)
-    console.log(`  ${pathIcon} Hook paths ${status.codex.pathsValid ? 'valid' : 'outdated — run promptline install --codex'}`)
   }
 
   console.log()
@@ -357,16 +353,24 @@ if (command === 'status') {
 
 // ── Default: launch dashboard ─────────────────────────────────────────────────
 
-// Startup validation
+// Startup: require Claude Code, auto-install hooks if missing
 const claudeDir = join(homedir(), '.claude')
-const status = getStatus()
 
 if (!existsSync(claudeDir)) {
-  console.warn(`\x1b[33m!\x1b[0m Claude Code not detected. Run \x1b[36mpromptline install\x1b[0m first.`)
-} else if (!status.claude?.installed) {
-  console.warn(`\x1b[33m!\x1b[0m PromptLine hooks not installed. Run \x1b[36mpromptline install\x1b[0m first.`)
-} else if (!status.claude.pathsValid) {
-  console.warn(`\x1b[33m!\x1b[0m Hook paths outdated. Run \x1b[36mpromptline install\x1b[0m to update.`)
+  console.warn(`\x1b[33m!\x1b[0m Claude Code not found. Install it first.`)
+  process.exit(1)
+}
+
+if (!getStatus().claude?.installed) {
+  process.stdout.write(`\x1b[36m⟳\x1b[0m Installing PromptLine hooks... `)
+  try {
+    installClaude()
+    console.log(`\x1b[32m✓\x1b[0m`)
+  } catch (err) {
+    console.log(`\x1b[31m✗\x1b[0m`)
+    console.error(`  ${toErrorMessage(err)} — run \x1b[36mpromptline install\x1b[0m manually.`)
+    process.exit(1)
+  }
 }
 
 // Launch Vite dev server

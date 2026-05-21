@@ -397,37 +397,22 @@ export function uninstallCodex() {
 
 // ── Status ─────────────────────────────────────────────────────────────────────
 
-function extractScriptPath(command) {
-  const match = command?.match(/"([^"]+)"/)
-  return match ? match[1] : null
-}
-
 function getAgentStatus(settingsPath) {
   try {
     if (!existsSync(settingsPath)) return null
 
     const settings = readJsonSafe(settingsPath)
-    if (!settings.hooks) return { installed: false, events: [], pathsValid: true }
+    if (!settings.hooks) return { installed: false, events: [] }
 
     const events = []
-    const scriptPaths = []
-
     for (const [event, arr] of Object.entries(settings.hooks)) {
       if (!Array.isArray(arr)) continue
       for (const entry of arr) {
-        if (!isPromptLineEntry(entry)) continue
-        events.push(event)
-        for (const h of entry.hooks || []) {
-          const sp = extractScriptPath(h.command)
-          if (sp) scriptPaths.push(sp)
-        }
+        if (isPromptLineEntry(entry)) events.push(event)
       }
     }
 
-    const installed = events.length > 0
-    const pathsValid = installed ? scriptPaths.every((p) => existsSync(p)) : true
-
-    return { installed, events, pathsValid }
+    return { installed: events.length > 0, events }
   } catch {
     return null
   }
