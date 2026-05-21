@@ -2,6 +2,8 @@
 # Shared functions for PromptLine hooks.
 # Sourced by session-start.sh, stop-hook.sh, and session-end.sh.
 
+command -v jq >/dev/null 2>&1 || exit 0
+
 # Acquire an O_EXCL lock (args: lock_file [timeout_s=3]); steals stale locks, returns 1 on timeout.
 pl_lock() {
   local lock_file="$1"
