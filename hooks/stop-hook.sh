@@ -78,7 +78,6 @@ RESULT=$(jq \
     (.prompts | to_entries | map(select(.value.status == "pending")) | first // null) as $pending |
 
     if $pending == null then
-      # No pending: nothing to drain
       { session: ., output: null }
     else
       # Mark pending as running
