@@ -50,9 +50,9 @@ is_process_alive() {
 close_session() {
   local path="$1"
   local lock="${path}.lock"
-  pl_lock "$lock" || return 1
+  pl_lock "$lock" || return 0
   local tmp_path="${path}.tmp.$$"
-  jq \
+  if jq \
     --arg now "$NOW" \
     '
       .closedAt = $now |
@@ -67,9 +67,13 @@ close_session() {
           .
         end
       ]
-    ' "$path" > "$tmp_path"
-  mv -f "$tmp_path" "$path"
+    ' "$path" > "$tmp_path" 2>/dev/null; then
+    mv -f "$tmp_path" "$path"
+  else
+    rm -f "$tmp_path"
+  fi
   pl_unlock "$lock"
+  return 0
 }
 
 # --- Close the current session ---

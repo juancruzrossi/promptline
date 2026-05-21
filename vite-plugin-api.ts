@@ -238,7 +238,9 @@ const routes: Route[] = [
     pattern: ['projects', ':project', 'sessions', ':sessionId'],
     handler: (params, _req, res) => {
       try {
-        deleteSession(QUEUES_DIR, params.project, params.sessionId);
+        withSessionLock(QUEUES_DIR, params.project, params.sessionId, () => {
+          deleteSession(QUEUES_DIR, params.project, params.sessionId);
+        });
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
           return jsonError(res, 404, 'Session not found');
@@ -278,7 +280,10 @@ const routes: Route[] = [
       const updates: { text?: string; status?: PromptStatus } = {};
 
       if (body.text !== undefined) {
-        updates.text = body.text as string;
+        if (typeof body.text !== 'string') {
+          return jsonError(res, 400, 'Field "text" must be a string');
+        }
+        updates.text = body.text;
       }
       if (body.status !== undefined) {
         const validStatuses: PromptStatus[] = ['pending', 'running', 'completed', 'cancelled'];
@@ -392,10 +397,15 @@ export default function apiPlugin(): Plugin {
           return;
         }
 
-        Promise.resolve(match.handler(match.params, req, res)).catch((err: unknown) => {
+        const onError = (err: unknown) => {
           const message = err instanceof Error ? err.message : 'Internal server error';
           jsonError(res, 500, message);
-        });
+        };
+        try {
+          Promise.resolve(match.handler(match.params, req, res)).catch(onError);
+        } catch (err: unknown) {
+          onError(err);
+        }
       }) as Connect.NextHandleFunction);
     },
   };

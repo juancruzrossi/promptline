@@ -6,10 +6,12 @@ export const SESSION_ACTIVE_TIMEOUT_MS = 60_000;
 export const SESSION_ABANDONED_TIMEOUT_MS = 24 * 60 * 60_000;
 const LOCK_STALE_MS = 10_000;
 const LOCK_RETRY_MS = 10;
+const LOCK_TIMEOUT_MS = 3_000;
 const LOCK_WAIT_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 
 function acquireLockSync(lockPath: string): void {
-  for (let i = 0; i < 100; i++) {
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  while (Date.now() < deadline) {
     try {
       const fd = openSync(lockPath, 'wx');
       closeSync(fd);
@@ -25,7 +27,7 @@ function acquireLockSync(lockPath: string): void {
       Atomics.wait(LOCK_WAIT_BUFFER, 0, 0, LOCK_RETRY_MS);
     }
   }
-  try { unlinkSync(lockPath); } catch { /* ignore */ }
+  throw new Error('Timed out acquiring session lock');
 }
 
 function releaseLockSync(lockPath: string): void {
