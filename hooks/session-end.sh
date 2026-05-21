@@ -68,7 +68,7 @@ close_session() {
         end
       ]
     ' "$path" > "$tmp_path" 2>/dev/null; then
-    mv -f "$tmp_path" "$path"
+    mv -f "$tmp_path" "$path" 2>/dev/null || rm -f "$tmp_path"
   else
     rm -f "$tmp_path"
   fi
