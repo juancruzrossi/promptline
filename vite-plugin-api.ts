@@ -5,7 +5,7 @@ import type { FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
-import type { PromptStatus } from './src/types/queue.ts';
+import type { PromptStatus, SessionQueue } from './src/types/queue.ts';
 import {
   listProjects,
   getProject,
@@ -172,7 +172,7 @@ function matchRoute(
 function withSession(
   params: RouteParams,
   res: ServerResponse,
-  fn: (session: ReturnType<typeof readSession> & object) => void,
+  fn: (session: SessionQueue) => void,
 ): void {
   return withSessionLock(QUEUES_DIR, params.project, params.sessionId, () => {
     const session = readSession(QUEUES_DIR, params.project, params.sessionId);
@@ -238,7 +238,9 @@ const routes: Route[] = [
     pattern: ['projects', ':project', 'sessions', ':sessionId'],
     handler: (params, _req, res) => {
       try {
-        deleteSession(QUEUES_DIR, params.project, params.sessionId);
+        withSessionLock(QUEUES_DIR, params.project, params.sessionId, () => {
+          deleteSession(QUEUES_DIR, params.project, params.sessionId);
+        });
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
           return jsonError(res, 404, 'Session not found');
@@ -278,7 +280,10 @@ const routes: Route[] = [
       const updates: { text?: string; status?: PromptStatus } = {};
 
       if (body.text !== undefined) {
-        updates.text = body.text as string;
+        if (typeof body.text !== 'string') {
+          return jsonError(res, 400, 'Field "text" must be a string');
+        }
+        updates.text = body.text;
       }
       if (body.status !== undefined) {
         const validStatuses: PromptStatus[] = ['pending', 'running', 'completed', 'cancelled'];
@@ -373,7 +378,13 @@ export default function apiPlugin(): Plugin {
           return;
         }
 
-        const segments = url.replace(/^\/api\//, '').split('/').map(decodeURIComponent);
+        let segments: string[];
+        try {
+          segments = url.replace(/^\/api\//, '').split('/').map(decodeURIComponent);
+        } catch {
+          jsonError(res, 400, 'Invalid path encoding');
+          return;
+        }
 
         if (!segments.every(isSafeSegment)) {
           jsonError(res, 400, 'Invalid path segment');
@@ -386,10 +397,15 @@ export default function apiPlugin(): Plugin {
           return;
         }
 
-        Promise.resolve(match.handler(match.params, req, res)).catch((err: unknown) => {
+        const onError = (err: unknown) => {
           const message = err instanceof Error ? err.message : 'Internal server error';
           jsonError(res, 500, message);
-        });
+        };
+        try {
+          Promise.resolve(match.handler(match.params, req, res)).catch(onError);
+        } catch (err: unknown) {
+          onError(err);
+        }
       }) as Connect.NextHandleFunction);
     },
   };

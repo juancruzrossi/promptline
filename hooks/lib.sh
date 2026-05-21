@@ -2,6 +2,33 @@
 # Shared functions for PromptLine hooks.
 # Sourced by session-start.sh, stop-hook.sh, and session-end.sh.
 
+command -v jq >/dev/null 2>&1 || exit 0
+
+pl_lock() {
+  local lock_file="$1"
+  local deadline=$((SECONDS + ${2:-3}))
+  while true; do
+    if (set -C; echo $$ > "$lock_file") 2>/dev/null; then
+      return 0
+    fi
+    local mtime
+    mtime=$(stat -c %Y "$lock_file" 2>/dev/null || stat -f %m "$lock_file" 2>/dev/null || echo 0)
+    case "$mtime" in ''|*[!0-9]*) mtime=0 ;; esac
+    if [ "$mtime" -gt 0 ] && [ "$(( $(date +%s) - mtime ))" -gt 10 ]; then
+      rm -f "$lock_file"
+      continue
+    fi
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      return 1
+    fi
+    sleep 0.01
+  done
+}
+
+pl_unlock() {
+  rm -f "$1" 2>/dev/null || true
+}
+
 # Locate an existing session file or set up paths for a new one.
 # Sets: QUEUE_FILE, QUEUE_DIR, PROJECT
 resolve_session_paths() {
@@ -47,29 +74,19 @@ extract_session_name() {
   local transcript="$1"
   [ -z "$transcript" ] || [ ! -f "$transcript" ] && echo "null" && return
 
-  local text=""
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -z "$line" ] && continue
-    local entry_type
-    entry_type=$(echo "$line" | jq -r '.type // empty' 2>/dev/null) || continue
-    [ "$entry_type" != "user" ] && continue
-
-    local content_str
-    content_str=$(echo "$line" | jq -r 'if .message.content | type == "string" then .message.content else empty end' 2>/dev/null) || true
-    if [ -n "$content_str" ]; then
-      text=$(echo "$content_str" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
-      break
-    fi
-
-    local content_text
-    content_text=$(echo "$line" | jq -r 'if .message.content | type == "array" then (.message.content[] | select(.type == "text") | .text) else empty end' 2>/dev/null | head -1) || true
-    if [ -n "$content_text" ]; then
-      text=$(echo "$content_text" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
-      break
-    fi
-  done < "$transcript"
+  local text
+  text=$(jq -rn '
+    first(
+      inputs
+      | select(.type == "user")
+      | .message.content
+      | if type == "string" then .
+        elif type == "array" then (first(.[] | select(.type == "text") | .text) // empty)
+        else empty end
+      | gsub("\\s+"; " ") | gsub("^ +| +$"; "")
+      | select(length > 0 and (startswith("<") | not))
+    ) // empty
+  ' "$transcript" 2>/dev/null) || text=""
 
   json_truncate "$text"
 }
