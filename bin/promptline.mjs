@@ -362,11 +362,14 @@ const claudeDir = join(homedir(), '.claude')
 const status = getStatus()
 
 if (!existsSync(claudeDir)) {
-  console.warn(`\x1b[33m!\x1b[0m Claude Code not detected. Run \x1b[36mpromptline install\x1b[0m first.`)
+  console.warn(`\x1b[33m!\x1b[0m Claude Code not detected. Install \x1b[36mClaude Code\x1b[0m first.`)
+  process.exit(1)
 } else if (!status.claude?.installed) {
   console.warn(`\x1b[33m!\x1b[0m PromptLine hooks not installed. Run \x1b[36mpromptline install\x1b[0m first.`)
+  process.exit(1)
 } else if (!status.claude.pathsValid) {
   console.warn(`\x1b[33m!\x1b[0m Hook paths outdated. Run \x1b[36mpromptline install\x1b[0m to update.`)
+  process.exit(1)
 }
 
 // Launch Vite dev server
