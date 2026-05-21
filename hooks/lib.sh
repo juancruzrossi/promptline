@@ -47,29 +47,19 @@ extract_session_name() {
   local transcript="$1"
   [ -z "$transcript" ] || [ ! -f "$transcript" ] && echo "null" && return
 
-  local text=""
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -z "$line" ] && continue
-    local entry_type
-    entry_type=$(echo "$line" | jq -r '.type // empty' 2>/dev/null) || continue
-    [ "$entry_type" != "user" ] && continue
-
-    local content_str
-    content_str=$(echo "$line" | jq -r 'if .message.content | type == "string" then .message.content else empty end' 2>/dev/null) || true
-    if [ -n "$content_str" ]; then
-      text=$(echo "$content_str" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
-      break
-    fi
-
-    local content_text
-    content_text=$(echo "$line" | jq -r 'if .message.content | type == "array" then (.message.content[] | select(.type == "text") | .text) else empty end' 2>/dev/null | head -1) || true
-    if [ -n "$content_text" ]; then
-      text=$(echo "$content_text" | tr '\n' ' ' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      [[ -z "$text" || "$text" == "<"* ]] && text="" && continue
-      break
-    fi
-  done < "$transcript"
+  local text
+  text=$(jq -rn '
+    first(
+      inputs
+      | select(.type == "user")
+      | .message.content
+      | if type == "string" then .
+        elif type == "array" then (first(.[] | select(.type == "text") | .text) // empty)
+        else empty end
+      | gsub("\\s+"; " ") | gsub("^ +| +$"; "")
+      | select(length > 0 and (startswith("<") | not))
+    ) // empty
+  ' "$transcript" 2>/dev/null) || text=""
 
   json_truncate "$text"
 }

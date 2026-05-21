@@ -57,8 +57,8 @@ if [ -f "$QUEUE_FILE" ]; then
       .lastActivity = $now |
       .closedAt = null |
       if (.sessionName == null or .sessionName == "") then .sessionName = $sessionName else . end |
-      if ($ownerPid != null) then .ownerPid = $ownerPid else if .ownerPid == null then .ownerPid = null else . end end |
-      if ($ownerStartedAt != null) then .ownerStartedAt = $ownerStartedAt else if .ownerStartedAt == null then .ownerStartedAt = null else . end end
+      if ($ownerPid != null) then .ownerPid = $ownerPid else . end |
+      if ($ownerStartedAt != null) then .ownerStartedAt = $ownerStartedAt else . end
     ' "$QUEUE_FILE") || { exit 0; }
 
   printf '%s\n' "$UPDATED" > "$TMP_FILE"
@@ -84,8 +84,6 @@ else
       prompts: [],
       startedAt: $startedAt,
       lastActivity: $lastActivity,
-      currentPromptId: null,
-      completedAt: null,
       closedAt: null,
       ownerPid: $ownerPid,
       ownerStartedAt: $ownerStartedAt

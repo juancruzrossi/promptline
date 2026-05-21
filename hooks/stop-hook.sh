@@ -80,8 +80,6 @@ if [ ! -f "$QUEUE_FILE" ]; then
       prompts: [],
       startedAt: $startedAt,
       lastActivity: $lastActivity,
-      currentPromptId: null,
-      completedAt: null,
       closedAt: null,
       ownerPid: null,
       ownerStartedAt: null
@@ -108,20 +106,15 @@ RESULT=$(jq \
     # Update lastActivity
     .lastActivity = $now |
 
-    # Check if all prompts are done
-    if ((.prompts | length) > 0 and (.prompts | all(.status == "completed" or .status == "cancelled")) and .completedAt == null) then .completedAt = $now else . end |
-
     # Find first pending prompt
     (.prompts | to_entries | map(select(.value.status == "pending")) | first // null) as $pending |
 
     if $pending == null then
-      # No pending: clear currentPromptId, output empty
-      .currentPromptId = null |
+      # No pending: nothing to drain
       { session: ., output: null }
     else
       # Mark pending as running
       .prompts[$pending.key].status = "running" |
-      .currentPromptId = $pending.value.id |
       # Count remaining pending (excluding the one we just took)
       (.prompts | map(select(.status == "pending")) | length) as $remaining |
       {

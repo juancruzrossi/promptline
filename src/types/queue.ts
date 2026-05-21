@@ -18,8 +18,6 @@ export interface SessionQueue {
   prompts: Prompt[];
   startedAt: string;
   lastActivity: string;
-  currentPromptId: string | null;
-  completedAt: string | null;
   closedAt: string | null;
   ownerPid?: number | null;
   ownerStartedAt?: string | null;

@@ -5,7 +5,7 @@ import type { FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
-import type { PromptStatus } from './src/types/queue.ts';
+import type { PromptStatus, SessionQueue } from './src/types/queue.ts';
 import {
   listProjects,
   getProject,
@@ -172,7 +172,7 @@ function matchRoute(
 function withSession(
   params: RouteParams,
   res: ServerResponse,
-  fn: (session: ReturnType<typeof readSession> & object) => void,
+  fn: (session: SessionQueue) => void,
 ): void {
   return withSessionLock(QUEUES_DIR, params.project, params.sessionId, () => {
     const session = readSession(QUEUES_DIR, params.project, params.sessionId);
@@ -373,7 +373,13 @@ export default function apiPlugin(): Plugin {
           return;
         }
 
-        const segments = url.replace(/^\/api\//, '').split('/').map(decodeURIComponent);
+        let segments: string[];
+        try {
+          segments = url.replace(/^\/api\//, '').split('/').map(decodeURIComponent);
+        } catch {
+          jsonError(res, 400, 'Invalid path encoding');
+          return;
+        }
 
         if (!segments.every(isSafeSegment)) {
           jsonError(res, 400, 'Invalid path segment');
