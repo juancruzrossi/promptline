@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 import type { ProjectView } from '../types/queue';
 import { StatusDot } from './StatusDot';
+import { TrashIcon } from './TrashIcon';
 
 interface SidebarProps {
   projects: ProjectView[];
   selectedProject: string | null;
   onSelectProject: (name: string) => void;
+  onDeleteProject: (name: string) => void | Promise<void>;
+  onDeleteAllProjects: () => void | Promise<void>;
   width: number;
   onWidthChange: (width: number) => void;
 }
@@ -40,6 +43,8 @@ export function Sidebar({
   projects,
   selectedProject,
   onSelectProject,
+  onDeleteProject,
+  onDeleteAllProjects,
   width,
   onWidthChange,
 }: SidebarProps) {
@@ -87,13 +92,28 @@ export function Sidebar({
       aria-label="Project navigation"
     >
       {/* Header */}
-      <div className="px-5 py-4 border-b border-[var(--color-border)]">
+      <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
         <h1
           className="text-base font-bold tracking-widest uppercase text-[var(--color-active)]"
           style={{ textShadow: '0 0 12px rgba(74, 222, 128, 0.4)' }}
         >
           PromptLine
         </h1>
+        {projects.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void onDeleteAllProjects()}
+            className={[
+              'shrink-0 p-1.5 rounded cursor-pointer',
+              'text-[var(--color-muted)]/50 hover:text-red-400 hover:bg-red-400/10',
+              'transition-all duration-100 focus:outline-none focus:ring-1 focus:ring-red-500/30',
+            ].join(' ')}
+            aria-label="Remove all projects from PromptLine"
+            title="Remove all projects from PromptLine"
+          >
+            <TrashIcon />
+          </button>
+        )}
       </div>
 
       {/* Project list */}
@@ -109,13 +129,13 @@ export function Sidebar({
             const sessionCount = project.sessions.length;
 
             return (
-              <li key={project.project} role="listitem">
+              <li key={project.project} role="listitem" className="group relative">
                 <button
                   type="button"
                   onClick={() => onSelectProject(project.project)}
                   aria-current={isSelected ? 'page' : undefined}
                   className={[
-                    'w-full text-left px-5 py-3 flex items-start gap-3 transition-colors duration-150 cursor-pointer',
+                    'w-full text-left pl-5 pr-12 py-3 flex items-start gap-3 transition-colors duration-150 cursor-pointer',
                     'border-l-2',
                     isSelected
                       ? 'border-[var(--color-running)] bg-[var(--color-border)]'
@@ -157,6 +177,24 @@ export function Sidebar({
                       )}
                     </span>
                   </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onDeleteProject(project.project);
+                  }}
+                  className={[
+                    'absolute right-3 top-3 p-1.5 rounded cursor-pointer',
+                    'text-[var(--color-muted)]/40 opacity-0',
+                    'group-hover:opacity-100 focus:opacity-100',
+                    'hover:text-red-400 hover:bg-red-400/10',
+                    'transition-all duration-100 focus:outline-none focus:ring-1 focus:ring-red-500/30',
+                  ].join(' ')}
+                  aria-label={`Remove ${project.project} from PromptLine`}
+                  title={`Remove ${project.project} from PromptLine`}
+                >
+                  <TrashIcon />
                 </button>
               </li>
             );
