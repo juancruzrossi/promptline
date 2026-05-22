@@ -1,11 +1,24 @@
 import { useMemo } from 'react';
 import type { ProjectView } from '../types/queue';
 import { StatusDot } from './StatusDot';
+import { TrashIcon } from './TrashIcon';
 
 interface SidebarProps {
   projects: ProjectView[];
   selectedProject: string | null;
   onSelectProject: (name: string) => void;
+  onDeleteProject: (name: string) => void | Promise<void>;
+  onDeleteAllProjects: () => void | Promise<void>;
+  width: number;
+  onWidthChange: (width: number) => void;
+}
+
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 560;
+const DEFAULT_SIDEBAR_WIDTH = 280;
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
 }
 
 function getSessionStatus(project: ProjectView): 'active' | 'idle' | 'none' {
@@ -26,7 +39,15 @@ function getProjectRank(project: ProjectView, pendingCount: number): number {
   return 2;
 }
 
-export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarProps) {
+export function Sidebar({
+  projects,
+  selectedProject,
+  onSelectProject,
+  onDeleteProject,
+  onDeleteAllProjects,
+  width,
+  onWidthChange,
+}: SidebarProps) {
   const pendingCounts = useMemo(
     () => new Map(projects.map((project) => [project.project, getPendingCount(project)])),
     [projects],
@@ -41,19 +62,58 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
     [pendingCounts, projects],
   );
 
+  function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const handle = event.currentTarget;
+
+    handle.setPointerCapture(event.pointerId);
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      onWidthChange(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  }
+
   return (
     <aside
-      className="flex flex-col w-[280px] shrink-0 h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
+      className="relative flex flex-col shrink-0 h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
+      style={{ width }}
       aria-label="Project navigation"
     >
       {/* Header */}
-      <div className="px-5 py-4 border-b border-[var(--color-border)]">
+      <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
         <h1
           className="text-base font-bold tracking-widest uppercase text-[var(--color-active)]"
           style={{ textShadow: '0 0 12px rgba(74, 222, 128, 0.4)' }}
         >
           PromptLine
         </h1>
+        {projects.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void onDeleteAllProjects()}
+            className={[
+              'shrink-0 p-1.5 rounded cursor-pointer',
+              'text-[var(--color-muted)]/50 hover:text-red-400 hover:bg-red-400/10',
+              'transition-all duration-100 focus:outline-none focus:ring-1 focus:ring-red-500/30',
+            ].join(' ')}
+            aria-label="Remove all projects from PromptLine"
+            title="Remove all projects from PromptLine"
+          >
+            <TrashIcon />
+          </button>
+        )}
       </div>
 
       {/* Project list */}
@@ -69,13 +129,13 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
             const sessionCount = project.sessions.length;
 
             return (
-              <li key={project.project} role="listitem">
+              <li key={project.project} role="listitem" className="group relative">
                 <button
                   type="button"
                   onClick={() => onSelectProject(project.project)}
                   aria-current={isSelected ? 'page' : undefined}
                   className={[
-                    'w-full text-left px-5 py-3 flex items-start gap-3 transition-colors duration-150 cursor-pointer',
+                    'w-full text-left pl-5 pr-12 py-3 flex items-start gap-3 transition-colors duration-150 cursor-pointer',
                     'border-l-2',
                     isSelected
                       ? 'border-[var(--color-running)] bg-[var(--color-border)]'
@@ -91,7 +151,11 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
                       {project.project}
                     </span>
 
-                    <span className="text-xs text-[var(--color-muted)] truncate leading-tight">
+                    <span
+                      className="text-xs text-[var(--color-muted)] truncate leading-tight"
+                      title={project.directory}
+                      aria-label={project.directory}
+                    >
                       {project.directory}
                     </span>
 
@@ -114,11 +178,51 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
                     </span>
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onDeleteProject(project.project);
+                  }}
+                  className={[
+                    'absolute right-3 top-3 p-1.5 rounded cursor-pointer',
+                    'text-[var(--color-muted)]/40 opacity-0',
+                    'group-hover:opacity-100 focus:opacity-100',
+                    'hover:text-red-400 hover:bg-red-400/10',
+                    'transition-all duration-100 focus:outline-none focus:ring-1 focus:ring-red-500/30',
+                  ].join(' ')}
+                  aria-label={`Remove ${project.project} from PromptLine`}
+                  title={`Remove ${project.project} from PromptLine`}
+                >
+                  <TrashIcon />
+                </button>
               </li>
             );
           })}
         </ul>
       </nav>
+
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        tabIndex={0}
+        title="Drag to resize sidebar"
+        onPointerDown={handleResizePointerDown}
+        onDoubleClick={() => onWidthChange(DEFAULT_SIDEBAR_WIDTH)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') onWidthChange(clampSidebarWidth(width - 24));
+          if (event.key === 'ArrowRight') onWidthChange(clampSidebarWidth(width + 24));
+          if (event.key === 'Home') onWidthChange(MIN_SIDEBAR_WIDTH);
+          if (event.key === 'End') onWidthChange(MAX_SIDEBAR_WIDTH);
+        }}
+        className={[
+          'absolute top-0 right-[-4px] z-20 h-full w-2 cursor-col-resize',
+          'after:absolute after:top-0 after:right-[3px] after:h-full after:w-px after:bg-transparent',
+          'hover:after:bg-[var(--color-running)] focus:after:bg-[var(--color-running)]',
+          'focus:outline-none',
+        ].join(' ')}
+      />
     </aside>
   );
 }

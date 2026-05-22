@@ -43,7 +43,11 @@ export function ProjectDetail({ project, projects, onProjectDeleted, onMutate }:
             <h2 className="text-lg font-bold text-[var(--color-text)] truncate leading-tight">
               {projectView.project}
             </h2>
-            <p className="text-xs text-[var(--color-muted)] mt-0.5 truncate font-mono">
+            <p
+              className="text-xs text-[var(--color-muted)] mt-0.5 truncate font-mono"
+              title={projectView.directory}
+              aria-label={projectView.directory}
+            >
               {projectView.directory}
             </p>
           </div>

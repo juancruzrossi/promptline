@@ -114,49 +114,61 @@ export function SessionSection({ session, project, onMutate, defaultExpanded = t
     <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-white/[0.02]">
       {/* Session header */}
       <div className="relative">
-      <button
-        type="button"
-        onClick={() => setExpanded(v => !v)}
-        className={[
-          'w-full flex items-center gap-3 pl-4 pr-10 py-3 text-left cursor-pointer',
-          'hover:bg-white/5 transition-colors duration-150 focus:outline-none',
-        ].join(' ')}
-        aria-expanded={expanded}
-      >
-        <StatusDot status={session.status} />
-        <span className={[
-          'flex-1 text-sm truncate leading-tight',
-          session.sessionName ? 'text-[var(--color-text)]' : 'text-[var(--color-muted)] italic',
-        ].join(' ')}>
-          {displayName}
-        </span>
-        {pendingCount > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[var(--color-pending)]/15 text-[var(--color-pending)] leading-none">
-            {pendingCount} queued
-          </span>
-        )}
-        <span
-          className="text-[var(--color-muted)] text-xs transition-transform duration-200"
-          style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-          aria-hidden="true"
-        >
-          ▶
-        </span>
-      </button>
-      {session.prompts.length > 0 && (
         <button
           type="button"
-          onClick={handleClearPrompts}
+          onClick={() => setExpanded(v => !v)}
           className={[
-            'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded cursor-pointer',
-            'text-[var(--color-muted)]/40 hover:text-red-400 hover:bg-red-400/10',
-            'transition-all duration-100 focus:outline-none',
+            'w-full flex items-center gap-3 pl-4 pr-10 py-3 text-left cursor-pointer',
+            'hover:bg-white/5 transition-colors duration-150 focus:outline-none',
           ].join(' ')}
-          aria-label="Clear prompts"
+          aria-expanded={expanded}
         >
-          <TrashIcon />
+          <StatusDot status={session.status} />
+          <span className="flex-1 min-w-0">
+            <span
+              className={[
+                'block text-sm truncate leading-tight',
+                session.sessionName ? 'text-[var(--color-text)]' : 'text-[var(--color-muted)] italic',
+              ].join(' ')}
+              title={displayName}
+            >
+              {displayName}
+            </span>
+            <span
+              className="block text-[11px] text-[var(--color-muted)] truncate leading-tight mt-0.5"
+              title={session.directory}
+              aria-label={session.directory}
+            >
+              {session.directory}
+            </span>
+          </span>
+          {pendingCount > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[var(--color-pending)]/15 text-[var(--color-pending)] leading-none">
+              {pendingCount} queued
+            </span>
+          )}
+          <span
+            className="text-[var(--color-muted)] text-xs transition-transform duration-200"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+            aria-hidden="true"
+          >
+            ▶
+          </span>
         </button>
-      )}
+        {session.prompts.length > 0 && (
+          <button
+            type="button"
+            onClick={handleClearPrompts}
+            className={[
+              'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded cursor-pointer',
+              'text-[var(--color-muted)]/40 hover:text-red-400 hover:bg-red-400/10',
+              'transition-all duration-100 focus:outline-none',
+            ].join(' ')}
+            aria-label="Clear prompts"
+          >
+            <TrashIcon />
+          </button>
+        )}
       </div>
 
       {/* Session content */}

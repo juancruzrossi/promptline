@@ -3,16 +3,49 @@ import { useProjects } from './hooks/useQueues';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { ProjectDetail } from './components/ProjectDetail';
+import { api } from './api/client';
+import { toErrorMessage } from './utils/errors';
 
 function App() {
   const { projects, loading, error, refresh } = useProjects();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
   const hasProjects = projects.length > 0;
   const showBlockingError = Boolean(error) && !hasProjects;
   const showBlockingLoading = loading && !hasProjects && !error;
 
   function handleProjectDeleted() {
     setSelectedProject(null);
+  }
+
+  async function deleteProject(project: string) {
+    const confirmed = window.confirm(
+      `Remove "${project}" from PromptLine? This only deletes PromptLine queue data.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.deleteProject(project);
+      if (selectedProject === project) setSelectedProject(null);
+      await refresh();
+    } catch (error) {
+      window.alert(toErrorMessage(error));
+    }
+  }
+
+  async function deleteAllProjects() {
+    const confirmed = window.confirm(
+      'Remove all projects from PromptLine? This only deletes PromptLine queue data.'
+    );
+    if (!confirmed) return;
+
+    try {
+      await Promise.all(projects.map((project) => api.deleteProject(project.project)));
+      setSelectedProject(null);
+      await refresh();
+    } catch (error) {
+      window.alert(toErrorMessage(error));
+    }
   }
 
   return (
@@ -23,6 +56,10 @@ function App() {
           projects={projects}
           selectedProject={selectedProject}
           onSelectProject={setSelectedProject}
+          onDeleteProject={deleteProject}
+          onDeleteAllProjects={deleteAllProjects}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
         />
 
         {/* Main content */}
