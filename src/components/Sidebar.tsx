@@ -6,6 +6,16 @@ interface SidebarProps {
   projects: ProjectView[];
   selectedProject: string | null;
   onSelectProject: (name: string) => void;
+  width: number;
+  onWidthChange: (width: number) => void;
+}
+
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 560;
+const DEFAULT_SIDEBAR_WIDTH = 280;
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
 }
 
 function getSessionStatus(project: ProjectView): 'active' | 'idle' | 'none' {
@@ -26,7 +36,13 @@ function getProjectRank(project: ProjectView, pendingCount: number): number {
   return 2;
 }
 
-export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarProps) {
+export function Sidebar({
+  projects,
+  selectedProject,
+  onSelectProject,
+  width,
+  onWidthChange,
+}: SidebarProps) {
   const pendingCounts = useMemo(
     () => new Map(projects.map((project) => [project.project, getPendingCount(project)])),
     [projects],
@@ -41,9 +57,33 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
     [pendingCounts, projects],
   );
 
+  function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const handle = event.currentTarget;
+
+    handle.setPointerCapture(event.pointerId);
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      onWidthChange(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  }
+
   return (
     <aside
-      className="flex flex-col w-[280px] shrink-0 h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
+      className="relative flex flex-col shrink-0 h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
+      style={{ width }}
       aria-label="Project navigation"
     >
       {/* Header */}
@@ -91,7 +131,11 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
                       {project.project}
                     </span>
 
-                    <span className="text-xs text-[var(--color-muted)] truncate leading-tight">
+                    <span
+                      className="text-xs text-[var(--color-muted)] truncate leading-tight"
+                      title={project.directory}
+                      aria-label={project.directory}
+                    >
                       {project.directory}
                     </span>
 
@@ -119,6 +163,28 @@ export function Sidebar({ projects, selectedProject, onSelectProject }: SidebarP
           })}
         </ul>
       </nav>
+
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        tabIndex={0}
+        title="Drag to resize sidebar"
+        onPointerDown={handleResizePointerDown}
+        onDoubleClick={() => onWidthChange(DEFAULT_SIDEBAR_WIDTH)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') onWidthChange(clampSidebarWidth(width - 24));
+          if (event.key === 'ArrowRight') onWidthChange(clampSidebarWidth(width + 24));
+          if (event.key === 'Home') onWidthChange(MIN_SIDEBAR_WIDTH);
+          if (event.key === 'End') onWidthChange(MAX_SIDEBAR_WIDTH);
+        }}
+        className={[
+          'absolute top-0 right-[-4px] z-20 h-full w-2 cursor-col-resize',
+          'after:absolute after:top-0 after:right-[3px] after:h-full after:w-px after:bg-transparent',
+          'hover:after:bg-[var(--color-running)] focus:after:bg-[var(--color-running)]',
+          'focus:outline-none',
+        ].join(' ')}
+      />
     </aside>
   );
 }

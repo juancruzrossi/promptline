@@ -7,6 +7,7 @@ import { ProjectDetail } from './components/ProjectDetail';
 function App() {
   const { projects, loading, error, refresh } = useProjects();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
   const hasProjects = projects.length > 0;
   const showBlockingError = Boolean(error) && !hasProjects;
   const showBlockingLoading = loading && !hasProjects && !error;
@@ -23,6 +24,8 @@ function App() {
           projects={projects}
           selectedProject={selectedProject}
           onSelectProject={setSelectedProject}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
         />
 
         {/* Main content */}
