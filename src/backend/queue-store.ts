@@ -345,8 +345,8 @@ export function withComputedStatus(session: SessionQueue): SessionQueue & { stat
 export function isSessionVisible(session: SessionQueue, now: number = Date.now()): boolean {
   if (session.closedAt != null) return false;
   if (hasPendingWork(session)) return true;
-  const msSinceStart = now - new Date(session.startedAt).getTime();
-  return msSinceStart <= SESSION_ABANDONED_TIMEOUT_MS;
+  const msSinceActivity = msSinceLastActivity(session, now);
+  return msSinceActivity <= SESSION_ABANDONED_TIMEOUT_MS;
 }
 
 function readProjectView(queuesDir: string, project: string): ProjectView | null {
