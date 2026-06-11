@@ -80,51 +80,58 @@ close_session() {
 close_session "$QUEUE_FILE"
 
 # --- Orphan sweep across all projects ---
-NOW_EPOCH=$(date -u +%s)
+# Detached below so a slow sweep never delays shutdown and gets cancelled.
+orphan_sweep() {
+  local NOW_EPOCH
+  NOW_EPOCH=$(date -u +%s)
 
-for project_dir in "$QUEUES_BASE"/*/; do
-  [ -d "$project_dir" ] || continue
-  for path in "$project_dir"*.json; do
-    # Skip non-files, lock files, tmp files
-    [ -f "$path" ] || continue
-    case "$path" in
-      *.lock|*.tmp.*) continue ;;
-    esac
-    # Skip the session we just closed
-    [ "$(basename "$path")" = "${SESSION_ID}.json" ] && continue
+  for project_dir in "$QUEUES_BASE"/*/; do
+    [ -d "$project_dir" ] || continue
+    for path in "$project_dir"*.json; do
+      # Skip non-files, lock files, tmp files
+      [ -f "$path" ] || continue
+      case "$path" in
+        *.lock|*.tmp.*) continue ;;
+      esac
+      # Skip the session we just closed
+      [ "$(basename "$path")" = "${SESSION_ID}.json" ] && continue
 
-    # Read relevant fields
-    CLOSED_AT=$(jq -r '.closedAt // empty' "$path" 2>/dev/null) || continue
-    [ -n "$CLOSED_AT" ] && continue
+      # Read relevant fields
+      CLOSED_AT=$(jq -r '.closedAt // empty' "$path" 2>/dev/null) || continue
+      [ -n "$CLOSED_AT" ] && continue
 
-    OWNER_PID=$(jq -r '.ownerPid // empty' "$path" 2>/dev/null) || continue
+      OWNER_PID=$(jq -r '.ownerPid // empty' "$path" 2>/dev/null) || continue
 
-    if [ -n "$OWNER_PID" ] && [ "$OWNER_PID" != "null" ]; then
-      # Has ownerPid: check if process is alive
-      if ! is_process_alive "$OWNER_PID"; then
-        close_session "$path"
-        continue
-      fi
-      # Process alive: verify start time matches
-      EXPECTED_STARTED_AT=$(jq -r '.ownerStartedAt // empty' "$path" 2>/dev/null) || true
-      if [ -n "$EXPECTED_STARTED_AT" ] && [ "$EXPECTED_STARTED_AT" != "null" ]; then
-        ACTUAL_STARTED_AT=$(ps -p "$OWNER_PID" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//' || true)
-        if [ -z "$ACTUAL_STARTED_AT" ] || [ "$ACTUAL_STARTED_AT" != "$EXPECTED_STARTED_AT" ]; then
+      if [ -n "$OWNER_PID" ] && [ "$OWNER_PID" != "null" ]; then
+        # Has ownerPid: check if process is alive
+        if ! is_process_alive "$OWNER_PID"; then
           close_session "$path"
           continue
         fi
+        # Process alive: verify start time matches
+        EXPECTED_STARTED_AT=$(jq -r '.ownerStartedAt // empty' "$path" 2>/dev/null) || true
+        if [ -n "$EXPECTED_STARTED_AT" ] && [ "$EXPECTED_STARTED_AT" != "null" ]; then
+          ACTUAL_STARTED_AT=$(ps -p "$OWNER_PID" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//' || true)
+          if [ -z "$ACTUAL_STARTED_AT" ] || [ "$ACTUAL_STARTED_AT" != "$EXPECTED_STARTED_AT" ]; then
+            close_session "$path"
+            continue
+          fi
+        fi
+      else
+        # Legacy: no ownerPid, check lastActivity age
+        LAST_ACTIVITY=$(jq -r '.lastActivity // .startedAt // empty' "$path" 2>/dev/null) || continue
+        [ -z "$LAST_ACTIVITY" ] && continue
+        ACTIVITY_EPOCH=$(iso_to_epoch "$LAST_ACTIVITY")
+        AGE=$(( NOW_EPOCH - ACTIVITY_EPOCH ))
+        if [ "$AGE" -ge "$LEGACY_TTL" ]; then
+          close_session "$path"
+        fi
       fi
-    else
-      # Legacy: no ownerPid, check lastActivity age
-      LAST_ACTIVITY=$(jq -r '.lastActivity // .startedAt // empty' "$path" 2>/dev/null) || continue
-      [ -z "$LAST_ACTIVITY" ] && continue
-      ACTIVITY_EPOCH=$(iso_to_epoch "$LAST_ACTIVITY")
-      AGE=$(( NOW_EPOCH - ACTIVITY_EPOCH ))
-      if [ "$AGE" -ge "$LEGACY_TTL" ]; then
-        close_session "$path"
-      fi
-    fi
+    done
   done
-done
+}
+
+# Background with stdio closed so the hook returns without waiting for it.
+orphan_sweep </dev/null >/dev/null 2>&1 &
 
 exit 0
